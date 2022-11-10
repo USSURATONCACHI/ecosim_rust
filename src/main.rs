@@ -19,6 +19,9 @@ mod world;
 mod update_thread;
 mod world_renderer;
 
+const ICON_PLAY: &[u8] = include_bytes!("../assets/img/play.png");
+const ICON_PAUSE: &[u8] = include_bytes!("../assets/img/pause.png");
+
 fn main() {
 	let options = eframe::NativeOptions {
 		initial_window_size: Some(egui::vec2(800.0, 600.0)),
@@ -102,7 +105,6 @@ struct App {
 	camera_zoom: f32,
 
 	images: HashMap<String, (ColorImage, Option<TextureHandle>)>,
-	tex_id: i32,
 }
 
 impl App {
@@ -113,18 +115,20 @@ impl App {
 			.expect("You need to run eframe with the glow backend");
 
 		let images = [
-			("play", "assets/img/play.png"),
-			("pause", "assets/img/pause.png"),
+			("play", ICON_PLAY),
+			("pause", ICON_PAUSE),
 		];
 
+		let world_size = unsafe { world.as_ref().unwrap().size() };
+
 		let images: HashMap<String, (ColorImage, Option<TextureHandle>)> = images.into_iter()
-			.map(|(name, path)| (name.to_string(), (load_image_from_path(&PathBuf::from(path)).unwrap(), None)))
+			.map(|(name, bytes)| (name.to_string(), (load_image_from_bytes(bytes).unwrap(), None)))
 			.collect();
 
 		Self {
 			run_simulation: false,
 			selected_tab: MenuTab::View,
-			camera_pos: (0.0, 0.0),
+			camera_pos: ((world_size.0 as f32) / 2.0, (world_size.1 as f32) / 2.0),
 			camera_zoom: 0.0,
 			render_mode: RenderMode::Food,
 			world,
@@ -133,7 +137,6 @@ impl App {
 			ups_limit: 1000,
 			world_renderer: Arc::new(egui::mutex::Mutex::new(WorldRenderer::new(gl))),
 			images,
-			tex_id: 2,
 		}
 	}
 
@@ -221,10 +224,6 @@ impl eframe::App for App {
 								ui.add(DragValue::new(&mut self.camera_zoom));
 								ui.end_row();
 
-								ui.label("Sampler2D value");
-								ui.add(Slider::new(&mut self.tex_id, 0..=15));
-								ui.end_row();
-
 								let ups_limit_changed = ui.checkbox(&mut self.is_ups_limited, "UPS limit").changed();
 								let ups_limit_changed = ups_limit_changed ||
 									ui.add_enabled(self.is_ups_limited, DragValue::new(&mut self.ups_limit)).changed();
@@ -281,8 +280,8 @@ impl App {
 		let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), rect.height()), egui::Sense::click_and_drag());
 
 		let zoom_coef = 2.0_f32.powf(self.camera_zoom);
-		self.camera_pos.0 += response.drag_delta().x / zoom_coef;
-		self.camera_pos.1 -= response.drag_delta().y / zoom_coef;
+		self.camera_pos.0 -= response.drag_delta().x / zoom_coef;
+		self.camera_pos.1 += response.drag_delta().y / zoom_coef;
 
 		if response.hovered() {
 			self.camera_zoom += ctx.input().scroll_delta.y * 0.01;
@@ -301,7 +300,6 @@ impl App {
 			screen_size: (rect.width(), rect.height()),
 			camera_pos: self.camera_pos.clone(),
 			zoom: self.camera_zoom.clone(),
-			tex_id: self.tex_id,
 		};
 		let world_renderer = self.world_renderer.clone();
 
@@ -317,6 +315,17 @@ impl App {
 
 fn load_image_from_path(path: &std::path::Path) -> Result<ColorImage, image::ImageError> {
 	let image = image::io::Reader::open(path)?.decode()?;
+	let size = [image.width() as _, image.height() as _];
+	let image_buffer = image.to_rgba8();
+	let pixels = image_buffer.as_flat_samples();
+	Ok(ColorImage::from_rgba_unmultiplied(
+		size,
+		pixels.as_slice(),
+	))
+}
+
+fn load_image_from_bytes(bytes: &[u8]) -> Result<ColorImage, image::ImageError> {
+	let image = image::load_from_memory(bytes).unwrap();
 	let size = [image.width() as _, image.height() as _];
 	let image_buffer = image.to_rgba8();
 	let pixels = image_buffer.as_flat_samples();

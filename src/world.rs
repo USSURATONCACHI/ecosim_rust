@@ -29,7 +29,7 @@ impl World {
 				.map(|i| {
 					// let x = i % size.0;
 					// let y = i / size.0;
-					Cell { state: rng.gen_bool(0.1) }
+					Cell { state: rng.gen_bool(0.5) }
 				})
 				.collect(),
 

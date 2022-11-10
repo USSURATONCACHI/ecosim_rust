@@ -21,7 +21,6 @@ pub struct PaintData {
 	pub screen_size: (f32, f32),
 	pub camera_pos: (f32, f32),
 	pub zoom: f32,
-	pub tex_id: i32,
 }
 
 impl WorldRenderer {
@@ -162,7 +161,7 @@ impl WorldRenderer {
 			gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
 			// gl.generate_mipmap(glow::TEXTURE_2D);
 
-			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_world_texture").as_ref(), data.tex_id);	// data.tex_id = 2
+			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_world_texture").as_ref(), 2);
 
 
 

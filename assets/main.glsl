@@ -15,7 +15,7 @@ vec4 get_world_color(vec2 world_pos);
 void main() {
     vec2 frag_pos_px = f_tex_coords * u_screen_size;
 
-    vec2 world_coords = (frag_pos_px - u_camera_pos * pow(2.0, u_camera_zoom)) / pow(2.0, u_camera_zoom);
+    vec2 world_coords = (frag_pos_px + u_camera_pos * pow(2.0, u_camera_zoom)) / pow(2.0, u_camera_zoom);
 
     out_color = get_world_color(world_coords);
 }
