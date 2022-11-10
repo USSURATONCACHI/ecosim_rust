@@ -1,188 +1,436 @@
-extern crate gl;
-extern crate winit;
-extern crate winapi;
-extern crate raw_gl_context;
-extern crate sciter;
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use eframe::egui;
+
+use std::sync::{Arc};
+use std::sync::mpsc::Sender;
+use std::time::Duration;
+use crate::egui::panel::Side;
+use crate::egui::{Align, ColorImage, DragValue, Grid, ImageButton, Layout, ScrollArea, TextureHandle, Ui};
+use crate::update_thread::{Message, UpdThread};
+use crate::world::World;
 
 mod util;
-
-use std::time::{Duration, Instant};
-use raw_gl_context::{GlConfig, GlContext};
-use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
-use sciter::Host;
-use sciter::windowless::RenderEvent;
-use winit::{
-	event::{Event, WindowEvent},
-	event_loop::EventLoop,
-	window::WindowBuilder,
-};
-use winit::event::StartCause;
-use crate::util::{current_time_nanos, TickCounter};
-
+mod world;
+mod update_thread;
 
 fn main() {
-	let event_loop = EventLoop::new();
+	let options = eframe::NativeOptions {
+		initial_window_size: Some(egui::vec2(800.0, 600.0)),
+		multisampling: 8,
+		renderer: eframe::Renderer::Glow,
+		..Default::default()
+	};
 
-	let window = WindowBuilder::new()
-		.with_title("A fantastic window!")
-		.with_inner_size(winit::dpi::LogicalSize::new(800, 600))
-		.build(&event_loop)
-		.unwrap();
+	let world = Box::new(World::new((200, 130)));
+	let world_ptr = world.as_ref() as *const World;
 
-	let window_handle = window.raw_window_handle();
-	let context = GlContext::create(&window, GlConfig::default()).unwrap();
-	context.make_current();
-	gl::load_with(|symbol| context.get_proc_address(symbol) as *const _);
+	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
 
-	// let window_handle = window.raw_window_handle();
-	// create an engine instance with an opaque pointer as an identifier
-	use sciter::windowless::{Message, handle_message};
-	let sciter_window = { &window as *const _ as sciter::types::HWINDOW };
-	handle_message(sciter_window, Message::Create { backend: sciter::types::GFX_LAYER::SKIA_OPENGL, transparent: true });
-	let sciter_host = Host::attach(sciter_window);
-	let path = std::env::current_dir().unwrap().join("minimal.htm");
-	sciter_host.load_file(path.to_str().unwrap());
+	let upd_thread = UpdThread::new(upd_rx, world).run();
 
+	eframe::run_native(
+		"Ecosim | GUI stage",
+		options,
+		Box::new(move |cc| Box::new(App::new(gui_tx, world_ptr, cc))),
+	);
+	upd_thread.join().unwrap();
+/*
+	let mut ctx = egui::Context::default();
 
-	let mut pack_start = current_time_nanos();
-	let pack_size = 64;
-	let target_fps = 4_000_u128; // millihertz
-
-	let mut fps_counter = TickCounter::new(30);
-	let mut frame: u128 = 0;
-
-	event_loop.run(move |event, _, control_flow| {
-		match event {
-			Event::WindowEvent {
-				event: WindowEvent::CloseRequested,
-				..
-			} => {
-				control_flow.set_exit();
-			}
-			Event::RedrawRequested(_) => {
-				frame += 1;
-				fps_counter.tick();
-				context.make_current();
-
-				let on_render = move |bitmap_area: &sciter::types::RECT, bitmap_data: &[u8]|
-					on_sciter_render(window_handle, bitmap_area, bitmap_data);
-				let cb = RenderEvent {
-					layer: None,
-					callback: Box::new(on_render),
-				};
-
-				handle_message(sciter_window, Message::RenderTo(cb));
-
-				window.set_title(&format!("Ecosim | FPS: {:.2}", fps_counter.tps_corrected()));
-
-				unsafe {
-					let i = ((frame % 256) as f32) / 255.0;
-					gl::ClearColor(1.0, i, 1.0 - i / 4.0, 1.0);
-					gl::Clear(gl::COLOR_BUFFER_BIT);
+	// Game loop:
+	loop {
+		let raw_input = egui::RawInput::default();
+		let full_output = ctx.run(raw_input, |ctx| {
+			egui::CentralPanel::default().show(&ctx, |ui| {
+				ui.label("Hello world!");
+				if ui.button("Click me").clicked() {
+					// take some action here
 				}
-
-				context.swap_buffers();
-				context.make_not_current();
-			}
-			Event::NewEvents(StartCause::Init) => {
-				control_flow.set_wait_until(Instant::now());
-			}
-			Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-				// VSync parody
-				let target_fps = match window.current_monitor() {
-					None => target_fps,
-					Some(monitor) => match monitor.refresh_rate_millihertz() {
-						None => target_fps,
-						Some(rate) => rate as u128,
-					}
-				};
-
-				let next_frame_time = pack_start + (frame % pack_size) * 1_000_000_000_u128 * 1000_u128 / target_fps;
-				let now = current_time_nanos();
-				if frame % pack_size == 0 {
-					pack_start = now;
-				}
-
-				if now < next_frame_time {
-					control_flow.set_wait_until(Instant::now() + Duration::from_nanos((next_frame_time - now) as u64));
-				}
-				window.request_redraw();
-			}
-
-			_other => {
-				//println!("Event {:?}", other);
-			}
-		}
-	});
-
-	/*let event_loop = EventLoop::new();
-	let window_builder = WindowBuilder::new().with_title("a window title");
-
-	// Set this to OpenGL 3.3
-	let context = ContextBuilder::new()
-		.with_gl(GlRequest::Specific(Api::OpenGl, (3, 3)))
-		.with_vsync(true)
-		.build_windowed(window_builder, &event_loop)
-		.unwrap();
-
-	let context = unsafe { context.make_current().unwrap() };*/
+			});
+		});
+		handle_platform_output(full_output.platform_output);
+		let clipped_primitives = ctx.tessellate(full_output.shapes); // create triangles to paint
+		paint(full_output.textures_delta, clipped_primitives);
+		std::thread::sleep(Duration::from_nanos(1_000_000_000 / 60));
+	}*/
 }
 
-fn on_sciter_render(window_handle: RawWindowHandle, bitmap_area: &sciter::types::RECT, bitmap_data: &[u8]) {
-	#[cfg(unix)]
-	{
-		let _ = bitmap_area;
-		let _ = bitmap_data;
-		let _ = window_handle;
+struct App {
+	run_simulation: bool,
+	selected_tab: MenuTab,
+	camera_pos: (f32, f32),
+	camera_zoom: f32,
+	render_mode: RenderMode,
+
+	// This is intentional unsafe part.
+	world: *const World,
+	tx_to_world: Sender<Message>,
+
+	is_ups_limited: bool,
+	ups_limit: u32,
+
+	// Example data, tmp
+	/// Behind an `Arc<Mutex<…>>` so we can pass it to [`egui::PaintCallback`] and paint later.
+	rotating_triangle: Arc<egui::mutex::Mutex<RotatingTriangle>>,
+	angle: f32,
+
+	images: HashMap<String, (ColorImage, Option<TextureHandle>)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum MenuTab {
+	View,
+	Params,
+	Entity,
+	Stats,
+	ProgramSettings,
+}
+impl MenuTab {
+	pub fn all() -> [MenuTab; 5] {
+		[
+			MenuTab::View,
+			MenuTab::Params,
+			MenuTab::Entity,
+			MenuTab::Stats,
+			MenuTab::ProgramSettings,
+		]
+	}
+}
+impl ToString for MenuTab {
+	fn to_string(&self) -> String {
+		match self {
+			MenuTab::View => "View",
+			MenuTab::Params => "Params",
+			MenuTab::Entity => "Entity Info",
+			MenuTab::Stats => "Statistics",
+			MenuTab::ProgramSettings => "Program Settings",
+		}.to_string()
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RenderMode {
+	Food,
+	Energy,
+	Health,
+	Alive,
+	Dead,
+}
+
+impl App {
+	fn new(tx_to_world: Sender<Message>, world: *const World, cc: &eframe::CreationContext<'_>) -> Self {
+		let gl = cc
+			.gl
+			.as_ref()
+			.expect("You need to run eframe with the glow backend");
+
+		let images = [
+			("play", "assets/img/play.png"),
+			("pause", "assets/img/pause.png"),
+		];
+
+		let images: HashMap<String, (ColorImage, Option<TextureHandle>)> = images.into_iter()
+			.map(|(name, path)| (name.to_string(), (load_image_from_path(&PathBuf::from(path)).unwrap(), None)))
+			.collect();
+
+		Self {
+			run_simulation: false,
+			selected_tab: MenuTab::View,
+			camera_pos: (0.0, 0.0),
+			camera_zoom: 0.0,
+			render_mode: RenderMode::Food,
+			world,
+			tx_to_world,
+			is_ups_limited: false,
+			ups_limit: 1000,
+			rotating_triangle: Arc::new(egui::mutex::Mutex::new(RotatingTriangle::new(gl))),
+			angle: 0.0,
+			images,
+		}
 	}
 
-	// Windows-specific bitmap rendering on the window
-	#[cfg(windows)]
-	{
-		use winapi::um::winuser::*;
-		use winapi::um::wingdi::*;
-		use winapi::shared::minwindef::LPVOID;
+	fn texture_handle(&mut self, name: impl Into<String>, ui: &mut Ui) -> &TextureHandle {
+		let name_owned = name.into();
+		let name = &name_owned;
+		match self.images.get_mut(name) {
+			None => panic!("Image '{}' was not added :(", name),
+			Some((image, handle)) => {
+				handle.get_or_insert_with(|| {
+					ui.ctx().load_texture(
+						name,
+						image.clone(),
+						Default::default()
+					)
+				})
+			}
+		}
+	}
 
-		let hwnd = match window_handle {
-			RawWindowHandle::Win32(data) => data.hwnd as winapi::shared::windef::HWND,
-			_ => unreachable!(),
+	fn total_entities(&self) -> u32 {
+		12345
+	}
+}
+
+impl eframe::App for App {
+	fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+		let (tps, tick, (size_x, size_y)) = {
+			let world = unsafe {
+				self.world.as_ref().unwrap()
+			};
+			(world.tps().tps_corrected(), world.cur_tick(), world.size())
+		};
+
+		egui::SidePanel::new(Side::Left, "control_panel")
+			.show(ctx, |ui| {
+			ScrollArea::vertical()
+				.show(ui, |ui| {
+				ui.add_space(5.0);
+				ui.horizontal(|ui| {
+					let btn_size = ui.spacing().icon_width;
+					if self.run_simulation {
+						let pause = self.texture_handle("pause", ui);
+						if ui.add(ImageButton::new(pause, (btn_size, btn_size))).clicked() {
+							self.run_simulation = false;
+							self.tx_to_world.send(Message::RunSimulation(false)).unwrap();
+						}
+					} else {
+						let play = self.texture_handle("play", ui);
+						if ui.add(ImageButton::new(play, (btn_size, btn_size))).clicked() {
+							self.run_simulation = true;
+							self.tx_to_world.send(Message::RunSimulation(true)).unwrap();
+						}
+					}
+					ui.label(format!("Simulation time: {} ticks", tick));
+				});
+				ui.label(format!("World size: {}×{}", size_x, size_y));
+				ui.label(format!("TPS: {:.02}", tps));
+				ui.label(format!("Total entities: {}", self.total_entities()));
+
+				ui.separator();
+				ui.horizontal_wrapped(|ui| {
+					for tab in MenuTab::all() {
+						ui.selectable_value(&mut self.selected_tab, tab, tab.to_string());
+					}
+				});
+				ui.separator();
+
+
+				match self.selected_tab {
+					MenuTab::View => {
+						Grid::new("tab_grid")
+							.num_columns(2)
+							.spacing((40.0, 4.0))
+							//.striped(true)
+							.show(ui, |ui| {
+								ui.label("Camera X");
+								ui.add(DragValue::new(&mut self.camera_pos.0));
+								ui.end_row();
+
+								ui.label("Camera Y");
+								ui.add(DragValue::new(&mut self.camera_pos.1));
+								ui.end_row();
+
+								ui.label("Zoom (exp)");
+								ui.add(DragValue::new(&mut self.camera_zoom));
+								ui.end_row();
+
+								let ups_limit_changed = ui.checkbox(&mut self.is_ups_limited, "UPS limit").changed();
+								let ups_limit_changed = ups_limit_changed ||
+									ui.add_enabled(self.is_ups_limited, DragValue::new(&mut self.ups_limit)).changed();
+
+								if ups_limit_changed {
+									let limit = if self.is_ups_limited {
+										Some(self.ups_limit)
+									} else {
+										None
+									};
+									self.tx_to_world.send(Message::LimitUPS(limit)).unwrap();
+								}
+
+								ui.end_row();
+							});
+
+						ui.heading("View mode:");
+						ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
+							ui.selectable_value(&mut self.render_mode, RenderMode::Food, "Food type");
+							ui.selectable_value(&mut self.render_mode, RenderMode::Energy, "Energy");
+							ui.selectable_value(&mut self.render_mode, RenderMode::Health, "Health");
+							ui.selectable_value(&mut self.render_mode, RenderMode::Alive, "Alive");
+							ui.selectable_value(&mut self.render_mode, RenderMode::Dead, "Dead");
+						});
+					}
+					MenuTab::Params => {
+
+					}
+					MenuTab::Entity => {}
+					MenuTab::Stats => {}
+					MenuTab::ProgramSettings => {}
+				}
+			});
+		});
+
+		egui::CentralPanel::default().show(ctx, |ui| {
+			egui::Frame::canvas(ui.style()).show(ui, |ui| {
+				self.custom_painting(ui);
+			});
+		});
+	}
+
+	fn on_exit(&mut self, gl: Option<&glow::Context>) {
+		self.tx_to_world.send(Message::Stop).unwrap();
+		if let Some(gl) = gl {
+			self.rotating_triangle.lock().destroy(gl);
+		}
+	}
+}
+
+impl App {
+	fn custom_painting(&mut self, ui: &mut Ui) {
+		let rect = ui.available_rect_before_wrap();
+		let (rect, response) =
+			ui.allocate_exact_size(egui::Vec2::new(rect.width(), rect.height()), egui::Sense::drag());
+
+		self.angle += response.drag_delta().x * 0.01;
+
+		// Clone locals so we can move them into the paint callback:
+		let angle = self.angle;
+		let rotating_triangle = self.rotating_triangle.clone();
+
+		let callback = egui::PaintCallback {
+			rect,
+			callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter| {
+				rotating_triangle.lock().paint(painter.gl(), angle);
+			})),
+		};
+		ui.painter().add(callback);
+	}
+}
+
+fn load_image_from_path(path: &std::path::Path) -> Result<ColorImage, image::ImageError> {
+	let image = image::io::Reader::open(path)?.decode()?;
+	let size = [image.width() as _, image.height() as _];
+	let image_buffer = image.to_rgba8();
+	let pixels = image_buffer.as_flat_samples();
+	Ok(ColorImage::from_rgba_unmultiplied(
+		size,
+		pixels.as_slice(),
+	))
+}
+
+
+struct RotatingTriangle {
+	program: glow::Program,
+	vertex_array: glow::VertexArray,
+}
+
+impl RotatingTriangle {
+	fn new(gl: &glow::Context) -> Self {
+		use glow::HasContext as _;
+
+		let shader_version = if cfg!(target_arch = "wasm32") {
+			"#version 300 es"
+		} else {
+			"#version 330"
 		};
 
 		unsafe {
-			// NOTE: we use `GetDC` here instead of `BeginPaint`, because the way
-			// winit 0.19 processed the `WM_PAINT` message (it always calls `DefWindowProcW`).
+			let program = gl.create_program().expect("Cannot create program");
 
-			// let mut ps = PAINTSTRUCT::default();
-			// let hdc = BeginPaint(hwnd, &mut ps as *mut _);
+			let (vertex_shader_source, fragment_shader_source) = (
+				r#"
+                    const vec2 verts[3] = vec2[3](
+                        vec2(0.0, 1.0),
+                        vec2(-1.0, -1.0),
+                        vec2(1.0, -1.0)
+                    );
+                    const vec4 colors[3] = vec4[3](
+                        vec4(1.0, 0.0, 0.0, 1.0),
+                        vec4(0.0, 1.0, 0.0, 1.0),
+                        vec4(0.0, 0.0, 1.0, 1.0)
+                    );
+                    out vec4 v_color;
+                    uniform float u_angle;
+                    void main() {
+                        v_color = colors[gl_VertexID];
+                        gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
+                        gl_Position.x *= cos(u_angle);
+                    }
+                "#,
+				r#"
+                    precision mediump float;
+                    in vec4 v_color;
+                    out vec4 out_color;
+                    void main() {
+                        out_color = v_color;
+                    }
+                "#,
+			);
 
-			let hdc = GetDC(hwnd);
+			let shader_sources = [
+				(glow::VERTEX_SHADER, vertex_shader_source),
+				(glow::FRAGMENT_SHADER, fragment_shader_source),
+			];
 
-			let (w, h) = (bitmap_area.width(), bitmap_area.height());
+			let shaders: Vec<_> = shader_sources
+				.iter()
+				.map(|(shader_type, shader_source)| {
+					let shader = gl
+						.create_shader(*shader_type)
+						.expect("Cannot create shader");
+					gl.shader_source(shader, &format!("{}\n{}", shader_version, shader_source));
+					gl.compile_shader(shader);
+					if !gl.get_shader_compile_status(shader) {
+						panic!("{}", gl.get_shader_info_log(shader));
+					}
+					gl.attach_shader(program, shader);
+					shader
+				})
+				.collect();
 
-			let mem_dc = CreateCompatibleDC(hdc);
-			let mem_bm = CreateCompatibleBitmap(hdc, w, h);
-
-			let mut bmi = BITMAPINFO::default();
-			{
-				let mut info = &mut bmi.bmiHeader;
-				info.biSize = std::mem::size_of::<BITMAPINFO>() as u32;
-				info.biWidth = w;
-				info.biHeight = -h;
-				info.biPlanes = 1;
-				info.biBitCount = 32;
+			gl.link_program(program);
+			if !gl.get_program_link_status(program) {
+				panic!("{}", gl.get_program_info_log(program));
 			}
 
-			let old_bm = SelectObject(mem_dc, mem_bm as LPVOID);
+			for shader in shaders {
+				gl.detach_shader(program, shader);
+				gl.delete_shader(shader);
+			}
 
-			let _copied = StretchDIBits(mem_dc, 0, 0, w, h, 0, 0, w, h, bitmap_data.as_ptr() as *const _, &bmi as *const _, 0, SRCCOPY);
-			let _ok = BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
+			let vertex_array = gl
+				.create_vertex_array()
+				.expect("Cannot create vertex array");
 
-			SelectObject(mem_dc, old_bm);
+			Self {
+				program,
+				vertex_array,
+			}
+		}
+	}
 
-			// EndPaint(hwnd, &ps as *const _);
-			ReleaseDC(hwnd, hdc);
+	fn destroy(&self, gl: &glow::Context) {
+		use glow::HasContext as _;
+		unsafe {
+			gl.delete_program(self.program);
+			gl.delete_vertex_array(self.vertex_array);
+		}
+	}
 
-			// println!("+ {} {}", w, h);
+	fn paint(&self, gl: &glow::Context, angle: f32) {
+		use glow::HasContext as _;
+		unsafe {
+			gl.use_program(Some(self.program));
+			gl.uniform_1_f32(
+				gl.get_uniform_location(self.program, "u_angle").as_ref(),
+				angle,
+			);
+			gl.bind_vertex_array(Some(self.vertex_array));
+			gl.draw_arrays(glow::TRIANGLES, 0, 3);
 		}
 	}
 }
+

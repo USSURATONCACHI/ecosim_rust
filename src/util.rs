@@ -1,3 +1,5 @@
+
+#[derive(Clone, Debug)]
 pub struct TickCounter {
     pub counters: Vec<(usize, f64)>,
     tps: usize,
@@ -25,6 +27,18 @@ impl TickCounter {
         for (f, t) in self.counters.iter_mut() {
             *f += 1;    //Просчет текущего значения
             if cur_time > *t {  //Обновление счетчиков
+                self.tps = *f;
+                self.tps_corrected = (*f as f64) / (cur_time - *t + 1.0);
+                *f = 0;
+                *t += 1.0;
+            }
+        }
+    }
+
+    pub fn no_tick(&mut self) {
+        let cur_time = current_time();
+        for (f, t) in self.counters.iter_mut() {
+            if cur_time > *t {
                 self.tps = *f;
                 self.tps_corrected = (*f as f64) / (cur_time - *t + 1.0);
                 *f = 0;
