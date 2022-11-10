@@ -1,8 +1,9 @@
+use rand::Rng;
 use crate::util::TickCounter;
 
 #[derive(Clone, Debug)]
 pub struct Cell {
-	state: bool,
+	pub state: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -19,12 +20,17 @@ pub struct World {
 impl World {
 	pub fn new(size: (usize, usize)) -> Self {
 		let arr_size = size.0 * size.1;
+		let mut rng = rand::thread_rng();
 		World {
 			size_x: size.0,
 			size_y: size.1,
 			tick: 0,
 			cells_data: (0..arr_size)
-				.map(|i| Cell { state: if i * 41 % 12 == 0 { true } else {false} })
+				.map(|i| {
+					// let x = i % size.0;
+					// let y = i / size.0;
+					Cell { state: rng.gen_bool(0.1) }
+				})
 				.collect(),
 
 			tmp_cells: [Cell { state: false }].into_iter()
@@ -56,8 +62,8 @@ impl World {
 			for y in 0..sizey {
 				let mut neighbours = 0;
 
-				for dx in -1..1 {
-					for dy in -1..1 {
+				for dx in -1..=1 {
+					for dy in -1..=1 {
 						let x = x + dx;
 						let y = y + dy;
 						if x >= 0 && y >= 0 && x < sizex && y < sizey &&
@@ -71,12 +77,9 @@ impl World {
 
 				let cell_state = self.cell(x as usize, y as usize).state;
 
-				let new_state = if !cell_state && neighbours >= 3 {
-					true
-				} else if cell_state && neighbours >= 2 && neighbours <= 3 {
-					true
-				} else {
-					false
+				let new_state = match cell_state {
+					true => neighbours == 2 || neighbours == 3,
+					false => neighbours == 3,
 				};
 
 				*self.tmp_cell(x as usize, y as usize) = Cell { state: new_state };

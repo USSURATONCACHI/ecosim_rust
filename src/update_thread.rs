@@ -52,7 +52,13 @@ impl UpdThread {
 
 					for msg in self.recv.try_iter() {
 						match msg {
-							Message::RunSimulation(flag) => self.run_simulation = flag,
+							Message::RunSimulation(flag) => {
+								if flag {
+									cycles_pack_start_time = now;
+									cycles_pack_start_cycle = cycle;
+								}
+								self.run_simulation = flag;
+							},
 							Message::LimitUPS(limit) => {
 								if limit.is_some() {
 									cycles_pack_start_time = now;
@@ -64,11 +70,9 @@ impl UpdThread {
 						}
 					}
 				}
-
 				if !self.run_simulation {
 					self.world.no_tick();
 					thread::sleep(Duration::from_nanos(IDLE_CHECKS_DELAY));
-					cycle += 1;
 				} else  {
 					self.world.update();
 					cycle += 1;
@@ -78,7 +82,6 @@ impl UpdThread {
 							cycles_pack_start_time = now;
 							cycles_pack_start_cycle = cycle;
 						}
-
 						let next_cycle_start = cycles_pack_start_time + ((cycle - cycles_pack_start_cycle) as u128) * 1_000_000_000 / (self.ups_limit.unwrap() as u128);
 						let now = current_time_nanos();
 						if now < next_cycle_start {
