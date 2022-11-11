@@ -2,17 +2,17 @@
 
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use eframe::egui;
 
 use std::sync::{Arc};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
+use eframe::egui::ComboBox;
 use crate::egui::panel::Side;
-use crate::egui::{Align, ColorImage, DragValue, Grid, ImageButton, Layout, ScrollArea, Slider, TextureHandle, Ui, Vec2};
+use crate::egui::{Align, ColorImage, DragValue, Grid, ImageButton, Layout, ScrollArea, TextureHandle, Ui, Vec2};
 use crate::update_thread::{Message, UpdThread};
 use crate::world::World;
-use crate::world_renderer::{PaintData, SendPtr, WorldRenderer};
+use crate::world_renderer::{AntiAliasing, PaintData, SendPtr, WorldRenderer};
 
 mod util;
 mod world;
@@ -30,7 +30,7 @@ fn main() {
 		..Default::default()
 	};
 
-	let world = Box::new(World::new((200, 130)));
+	let world = Box::new(World::new((100, 75)));
 	let world_ptr = world.as_ref() as *const World;
 
 	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
@@ -103,6 +103,7 @@ struct App {
 	world_renderer: Arc<egui::mutex::Mutex<WorldRenderer>>,
 	camera_pos: (f32, f32),
 	camera_zoom: f32,
+	antialiasing: AntiAliasing,
 
 	images: HashMap<String, (ColorImage, Option<TextureHandle>)>,
 }
@@ -137,6 +138,7 @@ impl App {
 			ups_limit: 1000,
 			world_renderer: Arc::new(egui::mutex::Mutex::new(WorldRenderer::new(gl))),
 			images,
+			antialiasing: AntiAliasing::SSAAx16
 		}
 	}
 
@@ -224,9 +226,20 @@ impl eframe::App for App {
 								ui.add(DragValue::new(&mut self.camera_zoom));
 								ui.end_row();
 
+								ui.label("Anti-Aliasing");
+								ComboBox::new("antialiasing", "")
+									.selected_text(format!("{:?}", self.antialiasing))
+									.show_ui(ui, |ui| {
+										for aa_type in AntiAliasing::all_values() {
+											ui.selectable_value(&mut self.antialiasing, *aa_type, format!("{:?}", aa_type));
+										}
+									});
+								ui.end_row();
+
 								let ups_limit_changed = ui.checkbox(&mut self.is_ups_limited, "UPS limit").changed();
 								let ups_limit_changed = ups_limit_changed ||
 									ui.add_enabled(self.is_ups_limited, DragValue::new(&mut self.ups_limit)).changed();
+								self.ups_limit = self.ups_limit.max(1);
 
 								if ups_limit_changed {
 									let limit = if self.is_ups_limited {
@@ -300,6 +313,7 @@ impl App {
 			screen_size: (rect.width(), rect.height()),
 			camera_pos: self.camera_pos.clone(),
 			zoom: self.camera_zoom.clone(),
+			antialiasing: self.antialiasing,
 		};
 		let world_renderer = self.world_renderer.clone();
 

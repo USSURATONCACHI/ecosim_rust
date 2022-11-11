@@ -1,6 +1,31 @@
 use glow::NativeTexture;
 use crate::World;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AntiAliasing {
+	MSAAx1 = 1,
+	MSAAx2 = 2,
+	MSAAx3 = 3,
+	MSAAx4 = 4,
+	MSAAx5 = 5,
+	SSAAx9 = 9,
+	SSAAx16 = 16,
+}
+
+impl AntiAliasing {
+	pub fn all_values() -> &'static [AntiAliasing] {
+		&[
+			AntiAliasing::MSAAx1,
+			AntiAliasing::MSAAx2,
+			AntiAliasing::MSAAx3,
+			AntiAliasing::MSAAx4,
+			AntiAliasing::MSAAx5,
+			AntiAliasing::SSAAx9,
+			AntiAliasing::SSAAx16,
+		]
+	}
+}
+
 pub struct WorldRenderer {
 	program: glow::Program,
 	vertex_array: glow::VertexArray,
@@ -21,6 +46,7 @@ pub struct PaintData {
 	pub screen_size: (f32, f32),
 	pub camera_pos: (f32, f32),
 	pub zoom: f32,
+	pub antialiasing: AntiAliasing,
 }
 
 impl WorldRenderer {
@@ -162,13 +188,9 @@ impl WorldRenderer {
 			// gl.generate_mipmap(glow::TEXTURE_2D);
 
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_world_texture").as_ref(), 2);
+			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_antialiasing").as_ref(), data.antialiasing as i32);
 
-
-
-
-
-
-			gl.uniform_2_u32(gl.get_uniform_location(self.program, "u_world_size").as_ref(), world_size.0 as u32, world_size.1 as u32);
+			gl.uniform_2_f32(gl.get_uniform_location(self.program, "u_world_size").as_ref(), world_size.0 as f32, world_size.1 as f32);
 			gl.uniform_2_f32(gl.get_uniform_location(self.program, "u_screen_size").as_ref(), data.screen_size.0, data.screen_size.1);
 			gl.uniform_2_f32(gl.get_uniform_location(self.program, "u_camera_pos").as_ref(), data.camera_pos.0, data.camera_pos.1);
 			gl.uniform_1_f32(gl.get_uniform_location(self.program, "u_camera_zoom").as_ref(), data.zoom);

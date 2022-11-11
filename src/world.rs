@@ -26,10 +26,10 @@ impl World {
 			size_y: size.1,
 			tick: 0,
 			cells_data: (0..arr_size)
-				.map(|i| {
+				.map(|_i| {
 					// let x = i % size.0;
 					// let y = i / size.0;
-					Cell { state: rng.gen_bool(0.5) }
+					Cell { state: rng.gen_bool(0.4) }
 				})
 				.collect(),
 
@@ -64,10 +64,9 @@ impl World {
 
 				for dx in -1..=1 {
 					for dy in -1..=1 {
-						let x = x + dx;
-						let y = y + dy;
-						if x >= 0 && y >= 0 && x < sizex && y < sizey &&
-							!(dx == 0 && dy == 0) {
+						let x = (x + dx + sizex) % sizex;
+						let y = (y + dy + sizey) % sizey;
+						if !(dx == 0 && dy == 0) {
 							if self.cell(x as usize, y as usize).state {
 								neighbours += 1;
 							}
