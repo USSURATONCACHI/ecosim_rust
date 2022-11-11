@@ -67,3 +67,145 @@ pub fn current_time_nanos() -> u128 {
         .unwrap()
         .as_nanos()
 }
+
+pub const CAMERA_ZOOM_EXP: f64 = 1000.0;
+pub const CAMERA_VEL_EXP: f64 = 128.0;
+
+#[derive(Debug, Clone)]
+pub struct Camera {
+    pos: (f32, f32),
+    vel: (f32, f32),
+    vel_start_time: f64,
+
+    next_vel: (f32, f32),
+    last_drag_time: f64,
+    pub vel_exp: f64,
+    pub vel_inertia: f32,
+
+    zoom: f32,
+    zoom_vel: f32,
+    zoom_vel_start_time: f64,
+    pub zoom_exp: f64,
+}
+
+impl Camera {
+    pub fn new(start_x: f32, start_y: f32) -> Self {
+        let now = current_time();
+        Camera {
+            pos: (start_x, start_y),
+            vel: (0.0, 0.0),
+            vel_start_time: now,
+            next_vel: (0.0, 0.0),
+            last_drag_time: now,
+            vel_exp: CAMERA_VEL_EXP,
+            vel_inertia: 0.3,
+            zoom: 0.0,
+            zoom_vel: 0.0,
+            zoom_vel_start_time: now,
+            zoom_exp: CAMERA_ZOOM_EXP,
+        }
+    }
+
+    pub fn pos(&self) -> (f32, f32) {
+        let q: f64 = 1.0 / self.vel_exp;
+
+        let (x, y) = self.pos;
+        let (vx, vy) = self.vel;
+        let t = current_time() - self.vel_start_time;
+
+        let coef = ((1.0 - q.powf(t)) / (1.0 - q)) as f32;
+        let new_x = x + self.vel_inertia * vx * coef;
+        let new_y = y + self.vel_inertia * vy * coef;
+        (new_x, new_y)
+    }
+
+    pub fn vel(&self) -> (f32, f32) {
+        let q: f64 = 1.0 / self.vel_exp;
+        let t = current_time() - self.zoom_vel_start_time;
+        let coef = ((1.0 - q.powf(t)) / (1.0 - q)) as f32;
+        (self.vel_inertia * self.vel.0 * coef, self.vel_inertia * self.vel.1 * coef)
+    }
+
+    pub fn set_pos(&mut self, new_pos: (f32, f32)) {
+        let new_vel = self.vel();
+        self.pos = new_pos;
+        self.vel = new_vel;
+        self.vel_start_time = current_time();
+    }
+
+    pub fn wrap_x(&mut self, max: f32) {
+        let (x, _y) = self.pos();
+        let new_x = ((x % max) + max) % max;
+        let dx = new_x - x;
+        self.pos.0 += dx;
+    }
+
+    pub fn wrap_y(&mut self, max: f32) {
+        let (_x, y) = self.pos();
+        let new_y = ((y % max) + max) % max;
+        let dy = new_y - y;
+        self.pos.1 += dy;
+    }
+
+    pub fn update_anim(&mut self) {
+        let new_pos = self.pos();
+        let new_vel = self.vel();
+        let new_zoom_vel = self.zoom_vel();
+        let now = current_time();
+
+        self.pos = new_pos;
+        self.vel = new_vel;
+        self.zoom_vel = new_zoom_vel;
+        self.vel_start_time = now;
+        self.zoom_vel_start_time = now;
+    }
+
+    pub fn zoom(&self) -> f32 {
+        let q = 1.0 / self.zoom_exp;
+        let t = current_time() - self.zoom_vel_start_time;
+        self.zoom + self.zoom_vel * (((1.0 - q.powf(t)) / (1.0 - q)) as f32)
+    }
+
+    pub fn zoom_vel(&self) -> f32 {
+        let q = 1.0 / self.zoom_exp;
+        let t = current_time() - self.zoom_vel_start_time;
+        self.zoom_vel * (q.powf(t) as f32)
+    }
+
+    pub fn set_zoom(&mut self, new_zoom: f32) {
+        self.zoom = new_zoom;
+        self.zoom_vel = 0.0;
+        self.zoom_vel_start_time = current_time();
+    }
+
+    pub fn on_zoom(&mut self, delta: f32) {
+        self.zoom = self.zoom();
+        self.zoom_vel = self.zoom_vel() + delta;
+        self.zoom_vel_start_time = current_time();
+    }
+
+    pub fn on_drag(&mut self, drag: (f32, f32)) {
+        self.pos.0 += drag.0;
+        self.pos.1 += drag.1;
+
+        let now = current_time();
+        let dt = (now - self.last_drag_time) as f32;
+        self.last_drag_time = now;
+        let this_drag_vel = (drag.0 / dt, drag.1 / dt);
+        self.next_vel.0 = self.next_vel.0 * 0.2 + this_drag_vel.0 * 0.8;
+        self.next_vel.1 = self.next_vel.1 * 0.2 + this_drag_vel.1 * 0.8;
+    }
+
+    pub fn on_drag_start(&mut self) {
+        self.pos = self.pos();
+        self.vel = (0.0, 0.0);
+        self.vel_start_time = current_time();
+    }
+
+    pub fn on_drag_end(&mut self) {
+        self.pos = self.pos();
+        self.vel = self.next_vel;
+        self.next_vel = (0.0, 0.0);
+        self.vel_start_time = current_time();
+    }
+}

@@ -14,6 +14,7 @@ pub const UPS_LIM_RESET_FREQ: u64 = 60; // each X ticks
 pub enum Message {
 	RunSimulation(bool),
 	LimitUPS(Option<u32>),
+	RunUntil(u64),
 	Stop,
 }
 
@@ -39,7 +40,7 @@ impl UpdThread {
 		thread::spawn(move || {
 			let mut last_channel_check = current_time_nanos();
 			let mut cycle: u64 = 0;
-
+			let mut run_until: u64 = 0;
 
 			let mut cycles_pack_start_time = last_channel_check;
 			let mut cycles_pack_start_cycle = 0_u64;
@@ -67,10 +68,13 @@ impl UpdThread {
 								self.ups_limit = limit;
 							},
 							Message::Stop => break 'run,
+							Message::RunUntil(target_tick) => {
+								run_until = target_tick;
+							}
 						}
 					}
 				}
-				if !self.run_simulation {
+				if !self.run_simulation && self.world.cur_tick() >= run_until {
 					self.world.no_tick();
 					thread::sleep(Duration::from_nanos(IDLE_CHECKS_DELAY));
 				} else  {

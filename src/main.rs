@@ -7,10 +7,11 @@ use eframe::egui;
 use std::sync::{Arc};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-use eframe::egui::ComboBox;
+use eframe::egui::{ComboBox, Slider};
 use crate::egui::panel::Side;
 use crate::egui::{Align, ColorImage, DragValue, Grid, ImageButton, Layout, ScrollArea, TextureHandle, Ui, Vec2};
 use crate::update_thread::{Message, UpdThread};
+use crate::util::Camera;
 use crate::world::World;
 use crate::world_renderer::{AntiAliasing, PaintData, SendPtr, WorldRenderer};
 
@@ -21,6 +22,7 @@ mod world_renderer;
 
 const ICON_PLAY: &[u8] = include_bytes!("../assets/img/play.png");
 const ICON_PAUSE: &[u8] = include_bytes!("../assets/img/pause.png");
+const ICON_PLAY_STOP: &[u8] = include_bytes!("../assets/img/play_and_stop.png");
 
 fn main() {
 	let options = eframe::NativeOptions {
@@ -30,7 +32,7 @@ fn main() {
 		..Default::default()
 	};
 
-	let world = Box::new(World::new((100, 75)));
+	let world = Box::new(World::new((500, 375)));
 	let world_ptr = world.as_ref() as *const World;
 
 	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
@@ -89,8 +91,14 @@ enum RenderMode {
 
 struct App {
 	run_simulation: bool,
+	run_exactly: u32,
+
 	selected_tab: MenuTab,
 	render_mode: RenderMode,
+
+	camera: Camera,
+	cam_vel_sensitivity: f32,
+	cam_zoom_sensitivity: f32,
 
 	// This is intentional unsafe part.
 	world: *const World,
@@ -101,8 +109,6 @@ struct App {
 
 	// Behind an `Arc<Mutex<…>>` so we can pass it to [`egui::PaintCallback`] and paint later.
 	world_renderer: Arc<egui::mutex::Mutex<WorldRenderer>>,
-	camera_pos: (f32, f32),
-	camera_zoom: f32,
 	antialiasing: AntiAliasing,
 
 	images: HashMap<String, (ColorImage, Option<TextureHandle>)>,
@@ -118,6 +124,7 @@ impl App {
 		let images = [
 			("play", ICON_PLAY),
 			("pause", ICON_PAUSE),
+			("play_stop", ICON_PLAY_STOP),
 		];
 
 		let world_size = unsafe { world.as_ref().unwrap().size() };
@@ -129,16 +136,20 @@ impl App {
 		Self {
 			run_simulation: false,
 			selected_tab: MenuTab::View,
-			camera_pos: ((world_size.0 as f32) / 2.0, (world_size.1 as f32) / 2.0),
-			camera_zoom: 0.0,
+
+			camera: Camera::new((world_size.0 as f32) / 2.0, (world_size.1 as f32) / 2.0),
+			cam_vel_sensitivity: 1.0,
+			cam_zoom_sensitivity: 1.0,
+
 			render_mode: RenderMode::Food,
 			world,
 			tx_to_world,
 			is_ups_limited: false,
 			ups_limit: 1000,
+			run_exactly: 1,
 			world_renderer: Arc::new(egui::mutex::Mutex::new(WorldRenderer::new(gl))),
 			images,
-			antialiasing: AntiAliasing::SSAAx16
+			antialiasing: AntiAliasing::SSAAx16,
 		}
 	}
 
@@ -163,6 +174,11 @@ impl App {
 impl eframe::App for App {
 	fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 		ctx.request_repaint_after(Duration::from_nanos(1_000_000_000 / 60));
+
+		let world_size = unsafe { self.world.as_ref().unwrap().size() };
+		self.camera.wrap_x(world_size.0 as f32);
+		self.camera.wrap_y(world_size.1 as f32);
+
 		let (tps, tick, (size_x, size_y)) = {
 			let world = unsafe {
 				self.world.as_ref().unwrap()
@@ -175,9 +191,9 @@ impl eframe::App for App {
 			ScrollArea::vertical()
 				.show(ui, |ui| {
 				ui.add_space(5.0);
+				let btn_size = ui.spacing().icon_width;
+				let run_simulation = self.run_simulation;
 				ui.horizontal(|ui| {
-					let btn_size = ui.spacing().icon_width;
-
 					if self.run_simulation {
 						let pause = self.texture_handle("pause", ui);
 						if ui.add(ImageButton::new(pause, (btn_size, btn_size))).clicked() {
@@ -194,8 +210,22 @@ impl eframe::App for App {
 
 					ui.label(format!("Simulation time: {} ticks", tick));
 				});
+
+				ui.horizontal(|ui| {
+					let play_stop = self.texture_handle("play_stop", ui);
+					let response = ui.add_enabled(!run_simulation, ImageButton::new(play_stop, (btn_size, btn_size)));
+
+					ui.label("Run exactly");
+					ui.add(DragValue::new(&mut self.run_exactly));
+					ui.label("ticks");
+
+					if response.clicked() {
+						self.tx_to_world.send(Message::RunUntil(tick + self.run_exactly as u64)).unwrap();
+					}
+				});
+
 				ui.label(format!("World size: {}×{}", size_x, size_y));
-				ui.label(format!("TPS: {:.02}", tps));
+				ui.label(format!("UPS: {:.02}", tps));
 				ui.label(format!("Total entities: -"));
 
 				ui.separator();
@@ -214,16 +244,24 @@ impl eframe::App for App {
 							.spacing((40.0, 4.0))
 							//.striped(true)
 							.show(ui, |ui| {
+								let (mut tmp_cam_x, mut tmp_cam_y) = self.camera.pos();
 								ui.label("Camera X");
-								ui.add(DragValue::new(&mut self.camera_pos.0));
+								let cam_x_changed = ui.add(DragValue::new(&mut tmp_cam_x)).changed();
 								ui.end_row();
 
 								ui.label("Camera Y");
-								ui.add(DragValue::new(&mut self.camera_pos.1));
+								let cam_y_changed = ui.add(DragValue::new(&mut tmp_cam_y)).changed();
 								ui.end_row();
 
+								if cam_x_changed || cam_y_changed {
+									self.camera.set_pos((tmp_cam_x, tmp_cam_y));
+								}
+
 								ui.label("Zoom (exp)");
-								ui.add(DragValue::new(&mut self.camera_zoom));
+								let mut tmp_zoom = self.camera.zoom();
+								if ui.add(DragValue::new(&mut tmp_zoom).speed(0.01)).changed() {
+									self.camera.set_zoom(tmp_zoom);
+								}
 								ui.end_row();
 
 								ui.label("Anti-Aliasing");
@@ -261,6 +299,40 @@ impl eframe::App for App {
 							ui.selectable_value(&mut self.render_mode, RenderMode::Alive, "Alive");
 							ui.selectable_value(&mut self.render_mode, RenderMode::Dead, "Dead");
 						});
+
+						ui.heading("Sensitivity");
+						Grid::new("sensitivity")
+							.num_columns(2)
+							.spacing((40.0, 4.0))
+							//.striped(true)
+							.show(ui, |ui| {
+								ui.label("Drag sensitivity");
+								ui.add(DragValue::new(&mut self.cam_vel_sensitivity).speed(0.01));
+								ui.end_row();
+
+								ui.label("Zoom sensitivity");
+								ui.add(DragValue::new(&mut self.cam_zoom_sensitivity).speed(0.01));
+								ui.end_row();
+
+								ui.label("Drag anim. exp.");
+								ui.horizontal(|ui| {
+									ui.label("1.0/");
+									ui.add(DragValue::new(&mut self.camera.vel_exp).speed(0.1).clamp_range(2.0..=2.0e20));
+								});
+								ui.end_row();
+
+								ui.label("Zoom anim. exp.");
+								ui.horizontal(|ui| {
+									ui.label("1.0/");
+									ui.add(DragValue::new(&mut self.camera.zoom_exp).speed(0.1).clamp_range(2.0..=2.0e20));
+
+								});
+								ui.end_row();
+
+								ui.label("Drag inertia");
+								ui.add(Slider::new(&mut self.camera.vel_inertia, 0.0..=1.0));
+								ui.end_row();
+							});
 					}
 					MenuTab::Params => {
 
@@ -292,12 +364,26 @@ impl App {
 		let rect = ui.available_rect_before_wrap();
 		let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), rect.height()), egui::Sense::click_and_drag());
 
-		let zoom_coef = 2.0_f32.powf(self.camera_zoom);
-		self.camera_pos.0 -= response.drag_delta().x / zoom_coef;
-		self.camera_pos.1 += response.drag_delta().y / zoom_coef;
+		let zoom_coef = 2.0_f32.powf(self.camera.zoom());
+
+		if response.drag_started() {
+			self.camera.on_drag_start();
+		}
+		if response.dragged() {
+			let drag = response.drag_delta();
+			self.camera.on_drag((-drag.x / zoom_coef / self.cam_vel_sensitivity, drag.y / zoom_coef / self.cam_vel_sensitivity));
+		}
+		if response.drag_released() {
+			self.camera.on_drag_end();
+		}
+
 
 		if response.hovered() {
-			self.camera_zoom += ctx.input().scroll_delta.y * 0.01;
+			let zoom_delta = ctx.input().scroll_delta.y * 0.01 * self.cam_zoom_sensitivity;
+			if zoom_delta.abs() >= 0.001 {
+				self.camera.on_zoom(zoom_delta);
+			}
+			//println!("Zoom: {}", ctx.input().scroll_delta.y);
 			if ctx.input().modifiers.ctrl {
 				// zoom without camera shift
 			} else if ctx.input().modifiers.alt {
@@ -311,8 +397,8 @@ impl App {
 		let paint_data = PaintData {
 			world: SendPtr(self.world),
 			screen_size: (rect.width(), rect.height()),
-			camera_pos: self.camera_pos.clone(),
-			zoom: self.camera_zoom.clone(),
+			camera_pos: self.camera.pos(),
+			zoom: self.camera.zoom(),
 			antialiasing: self.antialiasing,
 		};
 		let world_renderer = self.world_renderer.clone();

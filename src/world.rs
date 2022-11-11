@@ -26,10 +26,17 @@ impl World {
 			size_y: size.1,
 			tick: 0,
 			cells_data: (0..arr_size)
-				.map(|_i| {
-					// let x = i % size.0;
-					// let y = i / size.0;
-					Cell { state: rng.gen_bool(0.4) }
+				.map(|i| {
+					let x = i % size.0;
+					let y = i / size.0;
+					Cell {
+						state: //x <= 200 && rng.gen_bool(0.4)
+							(x == 1 && y == 0) ||
+							(x == 0 && y == 1) ||
+							(x == 1 && y == 1) ||
+							(x == 1 && y == 2) ||
+							(x == 2 && y == 2)
+					}
 				})
 				.collect(),
 

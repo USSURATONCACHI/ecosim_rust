@@ -31,6 +31,7 @@ pub struct WorldRenderer {
 	vertex_array: glow::VertexArray,
 
 	world_texture: NativeTexture,
+	last_redraw_tick: Option<u64>,
 
 	is_destroyed: bool,
 }
@@ -115,11 +116,15 @@ impl WorldRenderer {
 				.expect("Cannot create vertex array");
 
 			let world_texture = gl.create_texture().unwrap();
+			gl.bind_texture(glow::TEXTURE_2D, Some(world_texture));
+			gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+			gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
 
 			Self {
 				program,
 				vertex_array,
 				world_texture,
+				last_redraw_tick: None,
 				is_destroyed: false,
 			}
 		}
@@ -135,58 +140,43 @@ impl WorldRenderer {
 		self.is_destroyed = true;
 	}
 
-	pub fn paint(&self, gl: &glow::Context, data: PaintData) {
+	pub fn paint(&mut self, gl: &glow::Context, data: PaintData) {
 		use glow::HasContext as _;
 		let world = unsafe { data.world.0.as_ref().unwrap() };
 
 		let world_size = world.size();
-		let mut rgba: Box<[u8]> = vec![128_u8; world_size.0 * world_size.1 * 4].into_boxed_slice();
-		// let mut total_alive = 0;
-		for y in 0..world_size.1 {
-			for x in 0..world_size.0 {
-				let i = y * world_size.0 + x;
-				let cell = world.cell(x, y);
-				let texel: (u8, u8, u8, u8) = if cell.state { (255, 255, 255, 255) } else { (1, 1, 1, 255) };
-				rgba[i * 4 + 0] = texel.0;
-				rgba[i * 4 + 1] = texel.1;
-				rgba[i * 4 + 2] = texel.2;
-				rgba[i * 4 + 3] = texel.3;
 
-				/*
-				for (i, cell) in world.cells_data().iter().enumerate() {
-					if cell.state {
-						total_alive += 1;
-					}
+		unsafe {
+			gl.use_program(Some(self.program));
+		}
 
-					let texel: (u8, u8, u8, u8) = if cell.state { (255, 255, 255, 255) } else { (0, 0, 0, 255) };
+		if self.last_redraw_tick != Some(world.cur_tick()) {
+			self.last_redraw_tick = Some(world.cur_tick());
+			let mut rgba: Box<[u8]> = vec![128_u8; world_size.0 * world_size.1 * 4].into_boxed_slice();
+
+			for y in 0..world_size.1 {
+				for x in 0..world_size.0 {
+					let i = y * world_size.0 + x;
+					let cell = world.cell(x, y);
+					let texel: (u8, u8, u8, u8) = if cell.state { (255, 255, 255, 255) } else { (1, 1, 1, 255) };
 					rgba[i * 4 + 0] = texel.0;
 					rgba[i * 4 + 1] = texel.1;
 					rgba[i * 4 + 2] = texel.2;
 					rgba[i * 4 + 3] = texel.3;
 				}
-				*/
+			}
+
+			unsafe {
+				gl.active_texture(glow::TEXTURE2);
+				gl.bind_texture(glow::TEXTURE_2D, Some(self.world_texture));
+				gl.tex_image_2d(glow::TEXTURE_2D, 0,
+								glow::RGBA as i32, world_size.0 as i32, world_size.1 as i32,
+								0, glow::RGBA, glow::UNSIGNED_BYTE,
+								Some(&rgba));
 			}
 		}
-		assert_eq!(world_size.0 * world_size.1 * 4, rgba.len());
-
-		// println!("Total alive: {}", total_alive);
 
 		unsafe {
-			gl.use_program(Some(self.program));
-
-
-			gl.active_texture(glow::TEXTURE2);
-			let texture = gl.create_texture().unwrap();
-			gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-			gl.tex_image_2d(glow::TEXTURE_2D, 0,
-							glow::RGBA as i32, world_size.0 as i32, world_size.1 as i32,
-							0, glow::RGBA, glow::UNSIGNED_BYTE,
-							Some(&rgba));
-
-			gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-			gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
-			// gl.generate_mipmap(glow::TEXTURE_2D);
-
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_world_texture").as_ref(), 2);
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_antialiasing").as_ref(), data.antialiasing as i32);
 
@@ -197,7 +187,6 @@ impl WorldRenderer {
 
 			gl.bind_vertex_array(Some(self.vertex_array));
 			gl.draw_arrays(glow::TRIANGLES, 0, 6);
-			gl.delete_texture(texture);
 		}
 	}
 }
