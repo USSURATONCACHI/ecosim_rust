@@ -11,8 +11,8 @@ uniform int u_antialiasing;
 
 uniform sampler2D u_world_texture;
 
-#define WORLD_WRAP_X
-#define WORLD_WRAP_Y
+//#define WORLD_WRAP_X
+//#define WORLD_WRAP_Y
 
 float cube(float x);
 float interp1(float x);

@@ -30,12 +30,12 @@ impl World {
 					let x = i % size.0;
 					let y = i / size.0;
 					Cell {
-						state: //x <= 200 && rng.gen_bool(0.4)
-							(x == 1 && y == 0) ||
+						state: x <= 200 && rng.gen_bool(0.4)
+							/*(x == 1 && y == 0) ||
 							(x == 0 && y == 1) ||
 							(x == 1 && y == 1) ||
 							(x == 1 && y == 2) ||
-							(x == 2 && y == 2)
+							(x == 2 && y == 2) || rng.gen_bool(0.00001)*/
 					}
 				})
 				.collect(),

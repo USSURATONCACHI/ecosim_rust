@@ -7,8 +7,10 @@ use eframe::egui;
 use std::sync::{Arc};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-use eframe::egui::{ComboBox, Slider};
+use winit::platform::windows::WindowBuilderExtWindows;
+use winit::window::WindowBuilder;
 use crate::egui::panel::Side;
+use crate::egui::{ComboBox, Slider};
 use crate::egui::{Align, ColorImage, DragValue, Grid, ImageButton, Layout, ScrollArea, TextureHandle, Ui, Vec2};
 use crate::update_thread::{Message, UpdThread};
 use crate::util::Camera;
@@ -19,34 +21,47 @@ mod util;
 mod world;
 mod update_thread;
 mod world_renderer;
+mod shader_world;
 
 const ICON_PLAY: &[u8] = include_bytes!("../assets/img/play.png");
 const ICON_PAUSE: &[u8] = include_bytes!("../assets/img/pause.png");
 const ICON_PLAY_STOP: &[u8] = include_bytes!("../assets/img/play_and_stop.png");
 
 fn main() {
-	let options = eframe::NativeOptions {
-		initial_window_size: Some(egui::vec2(800.0, 600.0)),
-		multisampling: 8,
-		renderer: eframe::Renderer::Glow,
-		..Default::default()
-	};
+	/**/
 
-	let world = Box::new(World::new((500, 375)));
+	// view modes:
+	// regular, wrapped
+	// optional visual wrapping on coordinates
+	// all squares but current is a bit darker
+	// border while light lines
+	//glow::Context::
+	//let _shader_world = shader_world::World::new();
+
+	/*let world = Box::new(World::new((400, 300)));
 	let world_ptr = world.as_ref() as *const World;
 
 	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
 
-	let upd_thread = UpdThread::new(upd_rx, world).run();
+	let upd_thread = UpdThread::new(upd_rx, world).run();*/
 
-	eframe::run_native(
+	/*eframe::run_native(
 		"Ecosim | Temporary game of life",
 		options,
 		Box::new(move |cc| Box::new(App::new(gui_tx, world_ptr, cc))),
-	);
-	upd_thread.join().unwrap();
-}
+	);*/
 
+	/*let event_loop = winit::event_loop::EventLoopBuilder::with_user_event().build();
+	let glow_eframe = GlowWinitApp;
+	run_and_exit(event_loop, glow_eframe);
+
+	upd_thread.join().unwrap();*/
+
+	//let glow_eframe = GlowWinitApp::new(&event_loop, app_name, native_options, app_creator);
+	//run_and_exit(event_loop, glow_eframe);
+
+
+}
 
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -176,8 +191,8 @@ impl eframe::App for App {
 		ctx.request_repaint_after(Duration::from_nanos(1_000_000_000 / 60));
 
 		let world_size = unsafe { self.world.as_ref().unwrap().size() };
-		self.camera.wrap_x(world_size.0 as f32);
-		self.camera.wrap_y(world_size.1 as f32);
+		//self.camera.wrap_x(world_size.0 as f32);
+		//self.camera.wrap_y(world_size.1 as f32);
 
 		let (tps, tick, (size_x, size_y)) = {
 			let world = unsafe {
@@ -238,105 +253,8 @@ impl eframe::App for App {
 
 
 				match self.selected_tab {
-					MenuTab::View => {
-						Grid::new("tab_grid")
-							.num_columns(2)
-							.spacing((40.0, 4.0))
-							//.striped(true)
-							.show(ui, |ui| {
-								let (mut tmp_cam_x, mut tmp_cam_y) = self.camera.pos();
-								ui.label("Camera X");
-								let cam_x_changed = ui.add(DragValue::new(&mut tmp_cam_x)).changed();
-								ui.end_row();
-
-								ui.label("Camera Y");
-								let cam_y_changed = ui.add(DragValue::new(&mut tmp_cam_y)).changed();
-								ui.end_row();
-
-								if cam_x_changed || cam_y_changed {
-									self.camera.set_pos((tmp_cam_x, tmp_cam_y));
-								}
-
-								ui.label("Zoom (exp)");
-								let mut tmp_zoom = self.camera.zoom();
-								if ui.add(DragValue::new(&mut tmp_zoom).speed(0.01)).changed() {
-									self.camera.set_zoom(tmp_zoom);
-								}
-								ui.end_row();
-
-								ui.label("Anti-Aliasing");
-								ComboBox::new("antialiasing", "")
-									.selected_text(format!("{:?}", self.antialiasing))
-									.show_ui(ui, |ui| {
-										for aa_type in AntiAliasing::all_values() {
-											ui.selectable_value(&mut self.antialiasing, *aa_type, format!("{:?}", aa_type));
-										}
-									});
-								ui.end_row();
-
-								let ups_limit_changed = ui.checkbox(&mut self.is_ups_limited, "UPS limit").changed();
-								let ups_limit_changed = ups_limit_changed ||
-									ui.add_enabled(self.is_ups_limited, DragValue::new(&mut self.ups_limit)).changed();
-								self.ups_limit = self.ups_limit.max(1);
-
-								if ups_limit_changed {
-									let limit = if self.is_ups_limited {
-										Some(self.ups_limit)
-									} else {
-										None
-									};
-									self.tx_to_world.send(Message::LimitUPS(limit)).unwrap();
-								}
-
-								ui.end_row();
-							});
-
-						ui.heading("View mode:");
-						ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
-							ui.selectable_value(&mut self.render_mode, RenderMode::Food, "Food type");
-							ui.selectable_value(&mut self.render_mode, RenderMode::Energy, "Energy");
-							ui.selectable_value(&mut self.render_mode, RenderMode::Health, "Health");
-							ui.selectable_value(&mut self.render_mode, RenderMode::Alive, "Alive");
-							ui.selectable_value(&mut self.render_mode, RenderMode::Dead, "Dead");
-						});
-
-						ui.heading("Sensitivity");
-						Grid::new("sensitivity")
-							.num_columns(2)
-							.spacing((40.0, 4.0))
-							//.striped(true)
-							.show(ui, |ui| {
-								ui.label("Drag sensitivity");
-								ui.add(DragValue::new(&mut self.cam_vel_sensitivity).speed(0.01));
-								ui.end_row();
-
-								ui.label("Zoom sensitivity");
-								ui.add(DragValue::new(&mut self.cam_zoom_sensitivity).speed(0.01));
-								ui.end_row();
-
-								ui.label("Drag anim. exp.");
-								ui.horizontal(|ui| {
-									ui.label("1.0/");
-									ui.add(DragValue::new(&mut self.camera.vel_exp).speed(0.1).clamp_range(2.0..=2.0e20));
-								});
-								ui.end_row();
-
-								ui.label("Zoom anim. exp.");
-								ui.horizontal(|ui| {
-									ui.label("1.0/");
-									ui.add(DragValue::new(&mut self.camera.zoom_exp).speed(0.1).clamp_range(2.0..=2.0e20));
-
-								});
-								ui.end_row();
-
-								ui.label("Drag inertia");
-								ui.add(Slider::new(&mut self.camera.vel_inertia, 0.0..=1.0));
-								ui.end_row();
-							});
-					}
-					MenuTab::Params => {
-
-					}
+					MenuTab::View => self.update_menu_view(ui),
+					MenuTab::Params => {}
 					MenuTab::Entity => {}
 					MenuTab::Stats => {}
 					MenuTab::ProgramSettings => {}
@@ -410,6 +328,115 @@ impl App {
 			})),
 		};
 		ui.painter().add(callback);
+	}
+
+	fn update_menu_view(&mut self, ui: &mut Ui) {
+		ui.heading("General");
+		Grid::new("view_general")
+			.num_columns(2)
+			.spacing((40.0, 4.0))
+			//.striped(true)
+			.show(ui, |ui| {
+				let (mut tmp_cam_x, mut tmp_cam_y) = self.camera.pos();
+				ui.label("Camera X");
+				let cam_x_changed = ui.add(DragValue::new(&mut tmp_cam_x)).changed();
+				ui.end_row();
+
+				ui.label("Camera Y");
+				let cam_y_changed = ui.add(DragValue::new(&mut tmp_cam_y)).changed();
+				ui.end_row();
+
+				if cam_x_changed || cam_y_changed {
+					self.camera.set_pos((tmp_cam_x, tmp_cam_y));
+				}
+
+				ui.label("Zoom (exp)");
+				let mut tmp_zoom = self.camera.zoom();
+				if ui.add(DragValue::new(&mut tmp_zoom).speed(0.01)).changed() {
+					self.camera.set_zoom(tmp_zoom);
+				}
+				ui.end_row();
+
+				ui.label("Anti-Aliasing");
+				ComboBox::new("antialiasing", "")
+					.selected_text(format!("{:?}", self.antialiasing))
+					.show_ui(ui, |ui| {
+						for aa_type in AntiAliasing::all_values() {
+							ui.selectable_value(&mut self.antialiasing, *aa_type, format!("{:?}", aa_type));
+						}
+					});
+				ui.end_row();
+
+				let ups_limit_changed = ui.checkbox(&mut self.is_ups_limited, "UPS limit").changed();
+				let ups_limit_changed = ups_limit_changed ||
+					ui.add_enabled(self.is_ups_limited, DragValue::new(&mut self.ups_limit)).changed();
+				self.ups_limit = self.ups_limit.max(1);
+
+				if ups_limit_changed {
+					let limit = if self.is_ups_limited {
+						Some(self.ups_limit)
+					} else {
+						None
+					};
+					self.tx_to_world.send(Message::LimitUPS(limit)).unwrap();
+				}
+
+				ui.end_row();
+			});
+
+		ui.heading("View mode");
+		ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
+			ui.selectable_value(&mut self.render_mode, RenderMode::Food, "Food type");
+			ui.selectable_value(&mut self.render_mode, RenderMode::Energy, "Energy");
+			ui.selectable_value(&mut self.render_mode, RenderMode::Health, "Health");
+			ui.selectable_value(&mut self.render_mode, RenderMode::Alive, "Alive");
+			ui.selectable_value(&mut self.render_mode, RenderMode::Dead, "Dead");
+		});
+
+		ui.heading("World rendering");
+
+		ui.heading("Sensitivity");
+		Grid::new("sensitivity")
+			.num_columns(2)
+			.spacing((40.0, 4.0))
+			//.striped(true)
+			.show(ui, |ui| {
+				ui.label("Drag sensitivity");
+				ui.add(DragValue::new(&mut self.cam_vel_sensitivity).speed(0.01));
+				ui.end_row();
+
+				ui.label("Zoom sensitivity");
+				ui.add(DragValue::new(&mut self.cam_zoom_sensitivity).speed(0.01));
+				ui.end_row();
+
+				let mut tmp_cam_vel_exp = self.camera.vel_exp;
+				let mut tmp_cam_zoom_exp = self.camera.zoom_exp;
+				let mut tmp_cam_vel_inertia = self.camera.vel_inertia;
+				let mut any_changed = false;
+
+				ui.label("Drag anim. exp.");
+				any_changed |= ui.horizontal(|ui| {
+					ui.add(DragValue::new(&mut tmp_cam_vel_exp).speed(0.1).clamp_range(2.0..=2.0e20))
+				}).inner.changed();
+				ui.end_row();
+
+				ui.label("Zoom anim. exp.");
+				any_changed |= ui.horizontal(|ui| {
+					ui.add(DragValue::new(&mut tmp_cam_zoom_exp).speed(0.1).clamp_range(2.0..=2.0e20))
+				}).inner.changed();
+				ui.end_row();
+
+				ui.label("Drag inertia");
+				any_changed |= ui.add(Slider::new(&mut tmp_cam_vel_inertia, 0.0..=1.0)).changed();
+				ui.end_row();
+
+				if any_changed {
+					self.camera.update_anim();
+					self.camera.vel_exp = tmp_cam_vel_exp;
+					self.camera.zoom_exp = tmp_cam_zoom_exp;
+					self.camera.vel_inertia = tmp_cam_vel_inertia;
+				}
+			});
 	}
 }
 

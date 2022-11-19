@@ -194,7 +194,7 @@ impl WorldRenderer {
 impl Drop for WorldRenderer {
 	fn drop(&mut self) {
 		if !self.is_destroyed {
-			panic!("WorldRenderer was not properly destroyed (`.destroy()`) before dropping");
+			println!("ERROR: WorldRenderer was not properly destroyed (`.destroy()`) before dropping");
 		}
 	}
 }

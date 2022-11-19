@@ -122,7 +122,7 @@ impl Camera {
     pub fn vel(&self) -> (f32, f32) {
         let q: f64 = 1.0 / self.vel_exp;
         let t = current_time() - self.zoom_vel_start_time;
-        let coef = ((1.0 - q.powf(t)) / (1.0 - q)) as f32;
+        let coef = q.powf(t) as f32;
         (self.vel_inertia * self.vel.0 * coef, self.vel_inertia * self.vel.1 * coef)
     }
 
