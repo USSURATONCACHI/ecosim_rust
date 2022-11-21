@@ -37,14 +37,21 @@ fn main() {
 
 	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
 
-	let upd_thread = UpdThread::new(upd_rx, world).run();
+	let _upd_thread = UpdThread::new(upd_rx, world).run();
 
-	eframe::run_native(
+	// I modified a bit source code to divide window&context creation from
+	// start of event loop. That allows to extract Arc<glow::Context>.
+	let (event_loop, mut winit_app) = eframe::run::glow_integration::custom_run(
 		"Ecosim | Temporary game of life",
 		options,
 		Box::new(move |cc| Box::new(App::new(gui_tx, world_ptr, cc))),
 	);
-	upd_thread.join().unwrap();
+
+	winit_app.init_run_state(&event_loop);
+	let (gl, _) = winit_app.gl_data().unwrap();
+	println!("Gl: {:?}", gl);
+
+	eframe::run::run_and_exit(event_loop, winit_app);
 }
 
 
@@ -172,7 +179,7 @@ impl App {
 }
 
 impl eframe::App for App {
-	fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		ctx.request_repaint_after(Duration::from_nanos(1_000_000_000 / 60));
 
 		let world_size = unsafe { self.world.as_ref().unwrap().size() };
