@@ -11,8 +11,8 @@ uniform int u_antialiasing;
 
 uniform sampler2D u_world_texture;
 
-#define WORLD_WRAP_X
-#define WORLD_WRAP_Y
+// #define WORLD_WRAP_X
+// #define WORLD_WRAP_Y
 
 float cube(float x);
 float interp1(float x);
@@ -100,7 +100,7 @@ vec4 get_world_color(vec2 world_coords) {
 
     vec4 texel = texelFetch(u_world_texture, ivec2(world_coords), 0);
 
-    return in_range ? vec4(texel.xyz, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    return in_range ? vec4(texel.xyz + 0.1, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 }
 
 float cube(float x) {

@@ -1,8 +1,8 @@
 #version 430
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(rgb8ui) uniform uimage2D current_state;
-layout(rgb8ui) uniform uimage2D next_state;
+layout(rgba8ui) uniform uimage2D current_state;
+layout(rgba8ui) uniform uimage2D next_state;
 
 void main() {
     ivec2 pos = ivec2(gl_WorkGroupID.xy);

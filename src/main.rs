@@ -46,7 +46,7 @@ fn main() {
 	// DO THINGS >>>>>>
 	println!("Gl: {:?}", gl);
 
-	let world = Box::new(World::new((500, 375)));
+	let world = Box::new(World::new(gl.clone(), (500, 375)));
 	let world_ptr = world.as_ref() as *const World;
 
 	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
@@ -89,7 +89,6 @@ pub fn create_glutin_windowed_context(event_loop: &EventLoopWindowTarget<UserEve
 
 	(gl_window, gl)
 }
-
 
 pub fn window_builder(size: (f32, f32)) -> WindowBuilder {
 	let mut window_builder = WindowBuilder::new()
@@ -237,8 +236,8 @@ impl eframe::App for App {
 		ctx.request_repaint_after(Duration::from_nanos(1_000_000_000 / 60));
 
 		let world_size = unsafe { self.world.as_ref().unwrap().size() };
-		self.camera.wrap_x(world_size.0 as f32);
-		self.camera.wrap_y(world_size.1 as f32);
+		//self.camera.wrap_x(world_size.0 as f32);
+		//self.camera.wrap_y(world_size.1 as f32);
 
 		let (tps, tick, (size_x, size_y)) = {
 			let world = unsafe {

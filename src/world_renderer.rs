@@ -148,35 +148,10 @@ impl WorldRenderer {
 
 		unsafe {
 			gl.use_program(Some(self.program));
-		}
 
-		if self.last_redraw_tick != Some(world.cur_tick()) {
-			self.last_redraw_tick = Some(world.cur_tick());
-			let mut rgba: Box<[u8]> = vec![128_u8; world_size.0 * world_size.1 * 4].into_boxed_slice();
+			gl.active_texture(glow::TEXTURE2);
+			gl.bind_texture(glow::TEXTURE_2D, Some(world.current_state()));
 
-			for y in 0..world_size.1 {
-				for x in 0..world_size.0 {
-					let i = y * world_size.0 + x;
-					let cell = world.cell(x, y);
-					let texel: (u8, u8, u8, u8) = if cell.state { (255, 255, 255, 255) } else { (1, 1, 1, 255) };
-					rgba[i * 4 + 0] = texel.0;
-					rgba[i * 4 + 1] = texel.1;
-					rgba[i * 4 + 2] = texel.2;
-					rgba[i * 4 + 3] = texel.3;
-				}
-			}
-
-			unsafe {
-				gl.active_texture(glow::TEXTURE2);
-				gl.bind_texture(glow::TEXTURE_2D, Some(self.world_texture));
-				gl.tex_image_2d(glow::TEXTURE_2D, 0,
-								glow::RGBA as i32, world_size.0 as i32, world_size.1 as i32,
-								0, glow::RGBA, glow::UNSIGNED_BYTE,
-								Some(&rgba));
-			}
-		}
-
-		unsafe {
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_world_texture").as_ref(), 2);
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_antialiasing").as_ref(), data.antialiasing as i32);
 
