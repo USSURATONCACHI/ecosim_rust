@@ -458,8 +458,10 @@ dependencies = [
  "eframe",
  "egui_glow",
  "glow",
+ "glutin",
  "image",
  "rand",
+ "winit",
  "winres",
 ]
 

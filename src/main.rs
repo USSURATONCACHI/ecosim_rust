@@ -2,12 +2,18 @@
 
 
 use std::collections::HashMap;
-use eframe::egui;
+use eframe::{egui, UserEvent};
 
 use std::sync::{Arc};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 use eframe::egui::{ComboBox, Slider};
+use glow::Context;
+use glutin::{PossiblyCurrent, WindowedContext};
+use winit::dpi::PhysicalSize;
+use winit::event_loop::EventLoopWindowTarget;
+use winit::platform::windows::WindowBuilderExtWindows;
+use winit::window::WindowBuilder;
 use crate::egui::panel::Side;
 use crate::egui::{Align, ColorImage, DragValue, Grid, ImageButton, Layout, ScrollArea, TextureHandle, Ui, Vec2};
 use crate::update_thread::{Message, UpdThread};
@@ -25,12 +31,20 @@ const ICON_PAUSE: &[u8] = include_bytes!("../assets/img/pause.png");
 const ICON_PLAY_STOP: &[u8] = include_bytes!("../assets/img/play_and_stop.png");
 
 fn main() {
-	let options = eframe::NativeOptions {
+	let mut options = eframe::NativeOptions {
 		initial_window_size: Some(egui::vec2(800.0, 600.0)),
 		multisampling: 8,
 		renderer: eframe::Renderer::Glow,
 		..Default::default()
 	};
+
+	let event_loop = eframe::run::create_event_loop_builder(&mut options).build();
+	let (gl_window, gl) = create_glutin_windowed_context(&event_loop, &"Ecosim | Temporary game of life".to_string());
+	let gl = Arc::new(gl);
+
+
+	// DO THINGS >>>>>>
+	println!("Gl: {:?}", gl);
 
 	let world = Box::new(World::new((500, 375)));
 	let world_ptr = world.as_ref() as *const World;
@@ -38,20 +52,60 @@ fn main() {
 	let (gui_tx, upd_rx) = std::sync::mpsc::channel();
 
 	let _upd_thread = UpdThread::new(upd_rx, world).run();
+	// DO THINGS <<<<<<
 
 	// I modified a bit source code to divide window&context creation from
 	// start of event loop. That allows to extract Arc<glow::Context>.
-	let (event_loop, mut winit_app) = eframe::run::glow_integration::custom_run(
+	let mut winit_app = eframe::run::glow_integration::GlowWinitApp::custom(
+		&event_loop,
 		"Ecosim | Temporary game of life",
 		options,
 		Box::new(move |cc| Box::new(App::new(gui_tx, world_ptr, cc))),
+
+		gl_window,
+		gl.clone()
 	);
 
-	winit_app.init_run_state(&event_loop);
-	let (gl, _) = winit_app.gl_data().unwrap();
-	println!("Gl: {:?}", gl);
-
 	eframe::run::run_and_exit(event_loop, winit_app);
+}
+
+pub fn create_glutin_windowed_context(event_loop: &EventLoopWindowTarget<UserEvent>, title: &String) -> (WindowedContext<PossiblyCurrent>, Context) {
+	let window_builder = window_builder((800.0, 600.0))
+		.with_title(title)
+		.with_visible(false); // Keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
+
+	let gl_window = unsafe {
+		glutin::ContextBuilder::new()
+			.with_depth_buffer(0)
+			.with_multisampling(8)
+			.with_vsync(true)
+			.build_windowed(window_builder, event_loop)
+			.unwrap()
+			.make_current()
+			.unwrap()
+	};
+
+	let gl = unsafe { Context::from_loader_function(|s| gl_window.get_proc_address(s)) };
+
+	(gl_window, gl)
+}
+
+
+pub fn window_builder(size: (f32, f32)) -> WindowBuilder {
+	let mut window_builder = WindowBuilder::new()
+		.with_resizable(true)
+		.with_drag_and_drop(true)
+		.with_inner_size(PhysicalSize::new(size.0, size.1));
+
+	#[cfg(target_os = "macos")]
+	if *fullsize_content {
+		window_builder = window_builder
+			.with_title_hidden(true)
+			.with_titlebar_transparent(true)
+			.with_fullsize_content_view(true);
+	}
+
+	window_builder
 }
 
 
