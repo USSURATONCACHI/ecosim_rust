@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use glow::NativeTexture;
 use crate::World;
 
@@ -151,6 +152,7 @@ impl WorldRenderer {
 
 			gl.active_texture(glow::TEXTURE2);
 			gl.bind_texture(glow::TEXTURE_2D, Some(world.current_state()));
+			//println!("Current texture: {:?}", world.current_state());
 
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_world_texture").as_ref(), 2);
 			gl.uniform_1_i32(gl.get_uniform_location(self.program, "u_antialiasing").as_ref(), data.antialiasing as i32);
@@ -162,6 +164,11 @@ impl WorldRenderer {
 
 			gl.bind_vertex_array(Some(self.vertex_array));
 			gl.draw_arrays(glow::TRIANGLES, 0, 6);
+
+			/*let x = gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_SIZE, 0);
+			let y = gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_SIZE, 1);
+			let z = gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_SIZE, 2);
+			println!("Test 1 | Max size: {} by {} by {}", x, y, z);*/
 		}
 	}
 }

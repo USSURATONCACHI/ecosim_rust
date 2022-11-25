@@ -9,9 +9,11 @@ use std::sync::mpsc::Sender;
 use std::time::Duration;
 use eframe::egui::{ComboBox, Slider};
 use glow::Context;
-use glutin::{PossiblyCurrent, WindowedContext};
+use glutin::{ContextBuilder, PossiblyCurrent, WindowedContext};
+use glutin::platform::ContextTraitExt;
+use glutin::platform::windows::RawContextExt;
 use winit::dpi::PhysicalSize;
-use winit::event_loop::EventLoopWindowTarget;
+use winit::event_loop::{EventLoop, EventLoopWindowTarget};
 use winit::platform::windows::WindowBuilderExtWindows;
 use winit::window::WindowBuilder;
 use crate::egui::panel::Side;
@@ -45,7 +47,6 @@ fn main() {
 
 	// DO THINGS >>>>>>
 	println!("Gl: {:?}", gl);
-
 	let world = Box::new(World::new(gl.clone(), (500, 375)));
 	let world_ptr = world.as_ref() as *const World;
 
