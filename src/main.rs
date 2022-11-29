@@ -58,7 +58,7 @@ fn main() {
 	let start_time = Instant::now();
 	let egui_ctx = egui::Context::default();
 
-	let mut world = World::new(glow_gl.clone(), (4096, 4096));
+	let mut world = World::new(glow_gl.clone(), (256, 256));
 
 	let mut app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
 	let mut frame = 0_u64;
