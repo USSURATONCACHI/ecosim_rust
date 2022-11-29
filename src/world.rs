@@ -178,11 +178,6 @@ impl World {
 			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
 			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
 
-			// println!("Loc: {:?}", self.gl.get_uniform_location(self.program, "current_state"));
-			// self.gl.uniform_1_i32(self.gl.get_uniform_location(self.program, "current_state").as_ref(), 3);
-			//
-
-
 			self.gl.dispatch_compute(self.size.0 as u32, self.size.1 as u32, 1);
 			self.tps.tick();
 			self.tick += 1;
