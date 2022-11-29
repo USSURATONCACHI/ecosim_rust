@@ -93,7 +93,6 @@ fn main() {
 
 		if let Some(rect) = rect {
 			unsafe {
-				// print!("Rect: {:?} ", rect);
 				glow_gl.viewport(rect.min.x as i32, rect.min.y as i32,
 								 (rect.max.x - rect.min.x) as i32, (rect.max.y - rect.min.y) as i32);
 				let vp_size = rect.max - rect.min;
@@ -103,9 +102,7 @@ fn main() {
 					zoom: app.camera.zoom(),
 					antialiasing: app.antialiasing,
 				};
-				// println!("size: {:?} | xywh: {} {} {} {}", paint_data.screen_size, rect.min.x as i32, rect.min.y as i32, rect.max.x as i32, rect.max.y as i32);
 				world.render(paint_data);
-				// println!("Window size: {:?}, Bd size: {:?}",  window.size(), window.border_size());
 				glow_gl.viewport(0, 0, window.size().0 as i32, window.size().1 as i32);
 			}
 		}

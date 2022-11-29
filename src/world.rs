@@ -173,8 +173,6 @@ impl World {
 		unsafe {
 			self.gl.use_program(Some(self.program));
 
-			self.gl.active_texture(glow::TEXTURE0);
-			self.gl.bind_texture(glow::TEXTURE_2D, Some(self.current_buf));
 			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
 			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
 
