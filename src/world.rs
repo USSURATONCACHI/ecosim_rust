@@ -1,7 +1,76 @@
 use std::sync::Arc;
-use glow::{Context, HasContext, NativeTexture, NativeVertexArray, Program};
+use glow::{Context, HasContext, NativeTexture, Program, VertexArray};
 use rand::Rng;
+use crate::app::AntiAliasing;
 use crate::util::TickCounter;
+
+const RENDER_VERT_SOURCE: &str =
+r#"
+	#version 330
+	const vec2 verts[6] = vec2[6](
+		vec2(-1.0, -1.0),
+		vec2(-1.0, 1.0),
+		vec2(1.0, 1.0),
+		vec2(1.0, 1.0),
+		vec2(1.0, -1.0),
+		vec2(-1.0, -1.0)
+	);
+
+	out vec2 f_tex_coords;
+	uniform float u_angle;
+
+	void main() {
+		f_tex_coords = verts[gl_VertexID] / 2.0;
+		gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
+	}
+"#;
+const RENDER_FRAG_SOURCE: &str = include_str!("../assets/main.glsl");
+
+pub fn compile_program<'a>(gl: &Context, shader_sources: impl IntoIterator<Item = (u32, &'a str)>) -> Result<Program, String> {
+	use glow::HasContext as _;
+	unsafe {
+		let program = gl.create_program()
+			.map_err(|err| format!("Cannot create program: {}", err))?;
+
+		let shaders: Vec<_> = shader_sources
+			.into_iter()
+			.map(|(shader_type, shader_source)| {
+				let shader = gl
+					.create_shader(shader_type)
+					.map_err(|err| format!("Cannot create shader: {}", err))
+					.unwrap();	// TODO
+
+				gl.shader_source(shader, shader_source);
+				gl.compile_shader(shader);
+				if !gl.get_shader_compile_status(shader) {
+					panic!("Cannot compile shader: {}", gl.get_shader_info_log(shader));
+				}
+				gl.attach_shader(program, shader);
+				shader
+			})
+			.collect();
+
+		gl.link_program(program);
+		if !gl.get_program_link_status(program) {
+			return Err(format!("Cannot link program: {}", gl.get_program_info_log(program)));
+		}
+
+		for shader in shaders {
+			gl.detach_shader(program, shader);
+			gl.delete_shader(shader);
+		}
+
+		Ok(program)
+	}
+}
+
+#[derive(Clone, Debug)]
+pub struct PaintData {
+	pub screen_size: (f32, f32),
+	pub camera_pos: (f32, f32),
+	pub zoom: f32,
+	pub antialiasing: AntiAliasing,
+}
 
 #[derive(Clone, Debug)]
 pub struct World {
@@ -15,6 +84,9 @@ pub struct World {
 
 	tps: TickCounter,
 	tick: u64,
+
+	render_program: Program,
+	vertex_array: VertexArray,
 }
 
 impl World {
@@ -23,7 +95,7 @@ impl World {
 		let mut rng = rand::thread_rng();
 
 		let mut initial_state: Box<[u8]> = vec![0_u8;arr_size as usize].into_boxed_slice();
-		let mut empty_state: Box<[u8]> = vec![0_u8;arr_size as usize].into_boxed_slice();
+		let empty_state: Box<[u8]> = vec![0_u8;arr_size as usize].into_boxed_slice();
 		for x in 0..size.0 {
 			for y in 0..size.1 {
 				let val = if x <= 200 && rng.gen_bool(0.4) {
@@ -55,28 +127,17 @@ impl World {
 		let current_buf = create_texture(&initial_state);
 		let next_buf = create_texture(&empty_state);
 
-		let program;
-		unsafe {
-			program = gl.create_program().expect("Cannot create program");
-			let compute_shader_source = include_str!("game_of_life.glsl");
+		let sources = [
+			(glow::COMPUTE_SHADER, include_str!("game_of_life.glsl"))
+		];
+		let program = compile_program(&gl, sources).unwrap();
 
-			let shader = gl.create_shader(glow::COMPUTE_SHADER).expect("Cannot create shader");
-			gl.shader_source(shader, compute_shader_source);
-			gl.compile_shader(shader);
-			if !gl.get_shader_compile_status(shader) {
-				panic!("{}", gl.get_shader_info_log(shader));
-			}
-			gl.attach_shader(program, shader);
-
-			gl.link_program(program);
-			if !gl.get_program_link_status(program) {
-				panic!("{}", gl.get_program_info_log(program));
-			}
-
-			gl.detach_shader(program, shader);
-			gl.delete_shader(shader);
-
-		}
+		let render_sources = [
+			(glow::VERTEX_SHADER, RENDER_VERT_SOURCE),
+			(glow::FRAGMENT_SHADER, RENDER_FRAG_SOURCE),
+		];
+		let render_program = compile_program(&gl, render_sources).unwrap();
+		let vertex_array = unsafe { gl.create_vertex_array().unwrap() };
 
 		World {
 			gl,
@@ -85,7 +146,9 @@ impl World {
 			next_buf,
 			size,
 			tps: TickCounter::new(30),
-			tick: 0
+			tick: 0,
+			render_program,
+			vertex_array,
 		}
 	}
 
@@ -112,31 +175,42 @@ impl World {
 
 			self.gl.active_texture(glow::TEXTURE0);
 			self.gl.bind_texture(glow::TEXTURE_2D, Some(self.current_buf));
-			self.gl.bind_image_texture(1, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA);
+			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
+			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
 
-			// self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
+			// println!("Loc: {:?}", self.gl.get_uniform_location(self.program, "current_state"));
+			// self.gl.uniform_1_i32(self.gl.get_uniform_location(self.program, "current_state").as_ref(), 3);
+			//
 
 
 			self.gl.dispatch_compute(self.size.0 as u32, self.size.1 as u32, 1);
+			self.tps.tick();
+			self.tick += 1;
 			self.gl.memory_barrier(glow::ALL_BARRIER_BITS);
-
-			/*print!("Tick {} | ", self.tick);
-			print!("Error: '{}' | ", self.gl.get_program_info_log(self.program));
-			print!("Errors: '{:?}' | ", self.gl.get_debug_message_log(3));
-
-			let x = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_SIZE, 0);
-			let y = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_SIZE, 1);
-			let z = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_SIZE, 2);
-			let test = self.gl.get_parameter_i32(glow::MAX_NUM_ACTIVE_VARIABLES);
-			print!(" Max size: {} by {} by {} | test: {} ", x, y, z, test);
-			print!("\n");*/
-
-			// println!("Tick {} error: {}| size: {} by {} by 1", self.tick, self.gl.get_error(), self.size.0 as u32, self.size.1 as u32);
 		}
-
 		std::mem::swap(&mut self.current_buf, &mut self.next_buf);
-		self.tps.tick();
-		self.tick += 1;
+	}
+
+	pub fn render(&self, data: PaintData) {
+		let gl = &self.gl;
+		unsafe {
+			gl.use_program(Some(self.render_program));
+
+			let loc = |name: &str| gl.get_uniform_location(self.render_program, name);
+			gl.active_texture(glow::TEXTURE2);
+			gl.bind_texture(glow::TEXTURE_2D, Some(self.current_buf));
+
+			gl.uniform_1_i32(loc("u_world_texture").as_ref(), 2);
+			gl.uniform_1_i32(loc("u_antialiasing").as_ref(), data.antialiasing as i32);
+
+			gl.uniform_2_f32(loc("u_world_size").as_ref(), self.size.0 as f32, self.size.1 as f32);
+			gl.uniform_2_f32(loc("u_screen_size").as_ref(), data.screen_size.0, data.screen_size.1);
+			gl.uniform_2_f32(loc("u_camera_pos").as_ref(), data.camera_pos.0, data.camera_pos.1);
+			gl.uniform_1_f32(loc("u_camera_zoom").as_ref(), data.zoom);
+
+			gl.bind_vertex_array(Some(self.vertex_array));
+			gl.draw_arrays(glow::TRIANGLES, 0, 6);
+		}
 	}
 
 	pub fn no_tick(&mut self) {

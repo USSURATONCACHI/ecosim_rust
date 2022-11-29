@@ -6,15 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glow = "0.11.2"
 image = "0.24.4"
+sdl2 = { version = "0.35.2", features = ["bundled"] }
+egui_sdl2_gl = { path = "egui_sdl2_gl" }
+glow = "0.11.2"
 rand = "0.8.5"
-glutin = "0.29.0"
-winit = "0.27.2"
-egui_glow = { path = "crates/egui/crates/egui_glow" }
-
-[dependencies.eframe]
-path = "crates/egui/crates/eframe"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

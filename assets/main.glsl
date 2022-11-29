@@ -71,6 +71,7 @@ void main() {
 }
 
 vec4 render(vec2 frag_pos) {
+
     float cam_scale = pow(2.0, u_camera_zoom);
     vec2 world_coords = (frag_pos + u_camera_pos * cam_scale) / cam_scale;
 
