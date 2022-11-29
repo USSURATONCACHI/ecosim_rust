@@ -13,8 +13,8 @@ use std::time::Instant;
 use egui_sdl2_gl as egui_backend;
 use egui_sdl2_gl::egui::Rect;
 use egui_sdl2_gl::gl;
-use glow::HasContext;
-use sdl2::video::SwapInterval;
+use glow::{HasContext, NativeFence};
+use sdl2::video::{GLContext, SwapInterval};
 
 use crate::app::App;
 use crate::world::{PaintData, World};
@@ -29,7 +29,7 @@ fn main() {
 	gl_attr.set_context_profile(GLProfile::Core);
 
 	gl_attr.set_double_buffer(true);
-	gl_attr.set_multisample_samples(4);
+	gl_attr.set_multisample_samples(1);
 
 	let window = video_subsystem
 		.window(
@@ -58,20 +58,38 @@ fn main() {
 	let start_time = Instant::now();
 	let egui_ctx = egui::Context::default();
 
-	let mut world = World::new(glow_gl.clone(), (1000, 1000));
+	let mut world = World::new(glow_gl.clone(), (4096, 4096));
 
 	let mut app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
 	let mut frame = 0_u64;
 
+	let mut update_fence: Option<NativeFence> = None;
+	let mut update_start = Instant::now();
 	'running: loop {
-		if app.run_simulation || app.run_until > world.cur_tick() {
-			let upd_start = Instant::now();
-			world.update();
+		let frames_required = start_time.elapsed().as_secs_f64() * 60.0;
+		let should_render = frames_required >= frame as f64;
+		let fence_open = match &update_fence {
+			None => true,
+			Some(fence) => unsafe { glow_gl.get_sync_status(fence.clone()) == glow::SIGNALED },
+		};
+
+		if (app.run_simulation || app.run_until > world.cur_tick()) &&
+			(fence_open)	// || (!should_render && frames_required.fract() <= 0.5)
+		{
+			if let Some(fence) = update_fence {
+				println!("Tick {} - {} ms", world.cur_tick(), update_start.elapsed().as_secs_f64() * 1000.0);
+				update_start = Instant::now();
+				unsafe {
+					glow_gl.delete_sync(fence);
+				}
+			}
+			update_fence = Some(world.update());
+			/*let upd_start = Instant::now();
 			let upd_end = Instant::now();
-			print!("Tick {} - {:.04} ms | \n", world.cur_tick(), (upd_end - upd_start).as_secs_f64() * 1000.0);
+			print!("Tick {} - {:.04} ms | \n", world.cur_tick(), (upd_end - upd_start).as_secs_f64() * 1000.0);*/
 		}
 
-		if (start_time.elapsed().as_secs_f64() * 60.0) < (frame as f64) {
+		if !should_render {
 			continue;
 		}
 		frame += 1;
@@ -135,12 +153,16 @@ fn main() {
 			(events, 		"Events"),
 		];
 
-		for (instant, name) in timings {
-			print!("{} {:.04} ms | ", name, (instant - prev_ins).as_secs_f64() * 1000.0);
-			prev_ins = instant;
+		let total_ms = (prev_ins - render_start).as_secs_f64() * 1000.0;
+
+		if total_ms >= 50.0 {
+			for (instant, name) in timings {
+				print!("{} {:.04} ms | ", name, (instant - prev_ins).as_secs_f64() * 1000.0);
+				prev_ins = instant;
+			}
+			print!("Total: {:.04} ms\n", total_ms);
 		}
 
-		print!("Total: {:.04} ms\n", (prev_ins - render_start).as_secs_f64() * 1000.0);
 
 		// println!("Render time: {:.03} ms | Events: {:.03} ms", frame_start.elapsed().as_secs_f64() * 1000.0, events_start.elapsed().as_secs_f64() * 1000.0);
 	}

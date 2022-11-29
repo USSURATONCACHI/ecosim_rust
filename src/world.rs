@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use glow::{Context, HasContext, NativeTexture, Program, VertexArray};
+use glow::{Context, HasContext, NativeFence, NativeTexture, Program, VertexArray};
 use rand::Rng;
 use crate::app::AntiAliasing;
 use crate::util::TickCounter;
@@ -168,20 +168,45 @@ impl World {
 		&self.tps
 	}
 
-	pub fn update(&mut self) {
-
+	pub fn update(&mut self) -> NativeFence {
+		let fence;
 		unsafe {
 			self.gl.use_program(Some(self.program));
 
 			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
 			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
+			self.gl.uniform_2_i32( self.gl.get_uniform_location(self.program, "world_size").as_ref(), self.size.0 as i32, self.size.1 as i32);
 
-			self.gl.dispatch_compute(self.size.0 as u32, self.size.1 as u32, 1);
+			let max_wg_x = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 0) as u64;
+			let max_wg_y = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 1) as u64;
+			let max_wg_z = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 2) as u64;
+
+			let max_pixels = max_wg_x * max_wg_y * max_wg_z;
+			let total_pixels = self.size.0 * self.size.1 - 1024;
+			let total_calls = (total_pixels + max_pixels - 1) / max_pixels;
+
+			let mut exec_offset = 0;
+
+			for _ in 0..total_calls {
+				let pixels_to_call = (total_pixels - exec_offset).min(max_pixels); // 1024 * 1024 * 32
+
+				let wg_x = pixels_to_call.min(max_wg_x);
+				let wg_y = (pixels_to_call / max_wg_x + 1).min(max_wg_y);
+				let wg_z = (pixels_to_call / (max_wg_x * max_wg_y) + 1).min(max_wg_z);
+
+				self.gl.uniform_1_u32( self.gl.get_uniform_location(self.program, "exec_offset").as_ref(), exec_offset as u32);
+				self.gl.dispatch_compute(wg_x as u32, wg_y as u32, wg_z as u32);
+				exec_offset += pixels_to_call;
+			}
+			self.gl.memory_barrier(glow::ALL_BARRIER_BITS);
+			fence = self.gl.fence_sync(glow::SYNC_GPU_COMMANDS_COMPLETE, 0).unwrap();
 			self.tps.tick();
 			self.tick += 1;
-			self.gl.memory_barrier(glow::ALL_BARRIER_BITS);
+			// self.gl.memory_barrier(glow::ALL_BARRIER_BITS);
+			// self.gl.finish();
 		}
 		std::mem::swap(&mut self.current_buf, &mut self.next_buf);
+		fence
 	}
 
 	pub fn render(&self, data: PaintData) {
