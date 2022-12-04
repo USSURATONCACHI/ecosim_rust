@@ -87,27 +87,27 @@ pub struct World {
 
 	render_program: Program,
 	vertex_array: VertexArray,
+	
+	max_work_group_count: (usize, usize),
 }
 
 impl World {
 	pub fn new(gl: Arc<Context>, size: (u64, u64)) -> Self {
-		let arr_size = size.0 * size.1 * 3;
+		let arr_size = size.0 * size.1;
 		let mut rng = rand::thread_rng();
 
 		let mut initial_state: Box<[u8]> = vec![0_u8;arr_size as usize].into_boxed_slice();
 		let empty_state: Box<[u8]> = vec![0_u8;arr_size as usize].into_boxed_slice();
 		for x in 0..size.0 {
 			for y in 0..size.1 {
-				let val = if x <= 200 && rng.gen_bool(0.4) {
-					255_u8
+				let val = if rng.gen_bool(0.55) {
+					1_u8
 				} else {
 					0_u8
 				};
 
-				let id = ((y * size.0 + x) * 3) as usize;
+				let id = (y * size.0 + x) as usize;
 				initial_state[id + 0] = val;
-				initial_state[id + 1] = val;
-				initial_state[id + 2] = val;
 			}
 		}
 
@@ -118,9 +118,9 @@ impl World {
 				gl.bind_texture(glow::TEXTURE_2D, Some(texture));
 				gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
 				gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
-				gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA32F as i32,
+				gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::R8UI as i32,
 								size.0 as i32, size.1 as i32, 0,
-								glow::RGB, glow::UNSIGNED_BYTE, Some(state))
+								glow::RED_INTEGER, glow::UNSIGNED_BYTE, Some(state))
 			}
 			texture
 		};
@@ -139,6 +139,15 @@ impl World {
 		let render_program = compile_program(&gl, render_sources).unwrap();
 		let vertex_array = unsafe { gl.create_vertex_array().unwrap() };
 
+		let max_wg_x;
+		let max_wg_y;
+		unsafe {
+			gl.use_program(Some(program));
+			gl.uniform_2_i32( gl.get_uniform_location(program, "world_size").as_ref(), size.0 as i32, size.1 as i32);
+			max_wg_x = gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 0) as usize;
+			max_wg_y = gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 1) as usize;
+		}
+
 		World {
 			gl,
 			program,
@@ -149,6 +158,7 @@ impl World {
 			tick: 0,
 			render_program,
 			vertex_array,
+			max_work_group_count: (max_wg_x, max_wg_y),
 		}
 	}
 
@@ -168,45 +178,38 @@ impl World {
 		&self.tps
 	}
 
-	pub fn update(&mut self) -> NativeFence {
-		let fence;
+	pub fn update(&mut self) {
+		const WORK_GROUP_SIZE: u64 = 32;
 		unsafe {
 			self.gl.use_program(Some(self.program));
 
-			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
-			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::RGBA32F);
-			self.gl.uniform_2_i32( self.gl.get_uniform_location(self.program, "world_size").as_ref(), self.size.0 as i32, self.size.1 as i32);
+			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::R8UI);
+			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::R8UI);
 
-			let max_wg_x = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 0) as u64;
-			let max_wg_y = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 1) as u64;
-			let max_wg_z = self.gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 2) as u64;
+			let calls_x = (self.size().0 + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
+			let calls_y = (self.size().1 + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 
-			let max_pixels = max_wg_x * max_wg_y * max_wg_z;
-			let total_pixels = self.size.0 * self.size.1 - 1024;
-			let total_calls = (total_pixels + max_pixels - 1) / max_pixels;
+			if calls_x <= self.max_work_group_count.0 as u64 && calls_y <= self.max_work_group_count.1 as u64 {
+				self.gl.uniform_2_u32( self.gl.get_uniform_location(self.program, "tile_offset").as_ref(), 0, 0);
+				self.gl.dispatch_compute(calls_x as u32, calls_y as u32, 1);
+			} else {
+				// Tiling
+				for tile_x in (0..calls_x).step_by(self.max_work_group_count.0) {
+					let tile_x_size = (calls_x - tile_x).min(self.max_work_group_count.0 as u64);
 
-			let mut exec_offset = 0;
-
-			for _ in 0..total_calls {
-				let pixels_to_call = (total_pixels - exec_offset).min(max_pixels); // 1024 * 1024 * 32
-
-				let wg_x = pixels_to_call.min(max_wg_x);
-				let wg_y = (pixels_to_call / max_wg_x + 1).min(max_wg_y);
-				let wg_z = (pixels_to_call / (max_wg_x * max_wg_y) + 1).min(max_wg_z);
-
-				self.gl.uniform_1_u32( self.gl.get_uniform_location(self.program, "exec_offset").as_ref(), exec_offset as u32);
-				self.gl.dispatch_compute(wg_x as u32, wg_y as u32, wg_z as u32);
-				exec_offset += pixels_to_call;
+					for tile_y in (0..calls_y).step_by(self.max_work_group_count.1) {
+						let tile_y_size = (calls_y - tile_y).min(self.max_work_group_count.1 as u64);
+						self.gl.uniform_2_u32( self.gl.get_uniform_location(self.program, "tile_offset").as_ref(), tile_x as u32, tile_y as u32);
+						self.gl.dispatch_compute(tile_x_size as u32, tile_y_size as u32, 1);
+					}
+				}
 			}
+
 			self.gl.memory_barrier(glow::ALL_BARRIER_BITS);
-			fence = self.gl.fence_sync(glow::SYNC_GPU_COMMANDS_COMPLETE, 0).unwrap();
 			self.tps.tick();
 			self.tick += 1;
-			// self.gl.memory_barrier(glow::ALL_BARRIER_BITS);
-			// self.gl.finish();
 		}
 		std::mem::swap(&mut self.current_buf, &mut self.next_buf);
-		fence
 	}
 
 	pub fn render(&self, data: PaintData) {
@@ -217,7 +220,6 @@ impl World {
 			let loc = |name: &str| gl.get_uniform_location(self.render_program, name);
 			gl.active_texture(glow::TEXTURE2);
 			gl.bind_texture(glow::TEXTURE_2D, Some(self.current_buf));
-
 			gl.uniform_1_i32(loc("u_world_texture").as_ref(), 2);
 			gl.uniform_1_i32(loc("u_antialiasing").as_ref(), data.antialiasing as i32);
 
