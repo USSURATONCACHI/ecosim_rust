@@ -1,10 +1,9 @@
-//#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod app;
 mod util;
 mod world;
 
-use std::io::Write;
 use std::sync::Arc;
 use egui_backend::sdl2::video::GLProfile;
 use egui_backend::{egui, sdl2};
@@ -13,9 +12,8 @@ use std::time::Instant;
 // Alias the backend to something less mouthful
 use egui_sdl2_gl as egui_backend;
 use egui_sdl2_gl::egui::Rect;
-use egui_sdl2_gl::gl;
-use glow::{HasContext, NativeFence};
-use sdl2::video::{GLContext, SwapInterval};
+use glow::{HasContext};
+use sdl2::video::{SwapInterval};
 
 use crate::app::App;
 use crate::world::{PaintData, World};
@@ -62,105 +60,63 @@ fn main() {
 	let mut world = World::new(glow_gl.clone(), (768, 786));
 
 	let mut app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
-	let mut frame = 0_u64;
 
+	// Each `PACK_SIZE` frames start time is being reset
+	const PACK_SIZE: u64 = 120;
+	let mut prev_fps = app.target_fps;
+	let mut frames_pack_start = Instant::now();
+	let mut cur_frame = 0_u64;
 
-	// Lite testing
-	let linear_sizes = [768];
-	let measure_ticks = [10, 100, 1000, 10000];
-	let measurements_count = 1;
-
-/*
-	// Deep testing
-	let linear_sizes = [100, 200, 300, 400, 500, 600, 700, 768, 800, 900, 1000, 1024, 2048];
-	let measure_ticks = [10, 100, 1000, 5000, 7500, 8000, 8500, 9000, 9500, 10000];
-	let measurements_count = 1;
-*/
-
-	// Benchmark for a lot of variants.
-	let mut final_table = "World width; World height; Ticks per measurement; Upd/Sec; Upd * Cell / Sec;\n".to_string();
-
-	println!("Starting benchmark...");
-	for size_x in &linear_sizes {
-		for size_y in &linear_sizes {
-			for ticks in &measure_ticks {
-				let (size_x, size_y, ticks) = (*size_x, *size_y, *ticks);
-				print!("Testing {:?} for {} ticks x {} times...", (size_x, size_y), ticks, measurements_count);
-				let mut world = World::new(glow_gl.clone(), (size_x as u64, size_y as u64));
-
-				let mut total_ups = 0.0;
-				let mut total_upd_cell_per_sec = 0.0;
-
-				std::io::stdout().flush().unwrap();
-				for _ in 0..measurements_count {
-					unsafe { glow_gl.finish(); }
-					let start = Instant::now();
-					for _ in 0..ticks {
-						world.update();
-					}
-					unsafe { glow_gl.finish(); }
-
-					let time_secs = start.elapsed().as_secs_f64();
-					let ups = (ticks as f64) / time_secs;
-					let upd_cell_per_sec = ups * (world.size().0 as f64) * (world.size().1 as f64);
-
-					total_ups += ups;
-					total_upd_cell_per_sec += upd_cell_per_sec;
-				}
-				let ups = total_ups / (measurements_count as f64);
-				let upd_cell = total_upd_cell_per_sec / (measurements_count as f64);
-				print!(" Done! ({} | {})\n", ups, upd_cell);
-
-				final_table.push_str(&format!("{}; {}; {}; {}; {};\n", size_x, size_y, ticks, ups, upd_cell));
-			}
-		}
-	}
-
-	println!("Benchmark done!");
-	println!("{}", final_table);
-
-	let filename = "benchmark.csv";
-	std::fs::write(filename, final_table).unwrap();
-	println!("All data is saved to {}", filename);
+	let mut assumed_ups = 100.0;	// updates per second
 
 	'running: loop {
-		let frames_required = start_time.elapsed().as_secs_f64() * 60.0;
-		let should_render = frames_required >= frame as f64;
+		if prev_fps != app.target_fps {
+			cur_frame = 0;
+			frames_pack_start = Instant::now();
+			prev_fps = app.target_fps;
+		}
+
+		let next_frame_start = ((cur_frame + 1) as f64) / (app.target_fps as f64);
 
 		if app.run_simulation || app.run_until > world.cur_tick()
 		{
-			for _ in 0..100 {
-				world.update();
-				if !app.run_simulation && app.run_until <= world.cur_tick() {
-					break;
+			let time_left = next_frame_start - frames_pack_start.elapsed().as_secs_f64();
+			let updates_to_do = (time_left * assumed_ups).max(1.0) as u64;
+			let updates_to_do = if app.run_until > world.cur_tick() {
+				updates_to_do.min(app.run_until - world.cur_tick())
+			} else {
+				updates_to_do
+			};
+
+			if updates_to_do > 0 {
+				let update_start = Instant::now();
+				for _ in 0..updates_to_do {
+					world.update();
 				}
-			}
-			unsafe {
-				glow_gl.finish();
+				unsafe {
+					glow_gl.finish();
+				}
+				let current_ups = (updates_to_do as f64) / update_start.elapsed().as_secs_f64();
+				assumed_ups = (assumed_ups * 3.0 + current_ups) / 4.0;
 			}
 		}
 
-		if !should_render {
-			continue;
+		if frames_pack_start.elapsed().as_secs_f64() < next_frame_start {
+			continue; // Waiting for frame
 		}
+
 		world.no_tick();
-		frame += 1;
-
-		/* ---- */ let render_start = Instant::now();
-
 		egui_state.input.time = Some(start_time.elapsed().as_secs_f64());
 		let inputs = egui_state.input.take();
 
-		/* ---- */ let inp = Instant::now();
-
+		// Render egui
 		let mut rect: Option<Rect> = None;
 		let outputs = egui_ctx.run(inputs, |egui_ctx| app.update(egui_ctx, &world, &mut rect));
 		egui_state.process_output(&window, &outputs.platform_output);
 		let paint_jobs = egui_ctx.tessellate(outputs.shapes);
 		painter.paint(None, paint_jobs, &outputs.textures_delta);
 
-		/* ---- */ let egui_rend = Instant::now();
-
+		// Render world on top
 		if let Some(rect) = rect {
 			unsafe {
 				glow_gl.viewport(rect.min.x as i32, rect.min.y as i32,
@@ -177,11 +133,7 @@ fn main() {
 			}
 		}
 
-		/* ---- */ let world_rend = Instant::now();
-
 		window.gl_swap_window();
-
-		/* ---- */ let swap_time = Instant::now();
 
 		for event in event_pump.poll_iter() {
 			match event {
@@ -192,29 +144,10 @@ fn main() {
 				}
 			}
 		}
-		/* ---- */ let events = Instant::now();
 
-		let mut prev_ins = render_start;
-
-		let timings = [
-			(inp, 			"Input"),
-			(egui_rend, 	"Egui"),
-			(world_rend, 	"World"),
-			(swap_time, 	"Swap"),
-			(events, 		"Events"),
-		];
-
-		let total_ms = (prev_ins - render_start).as_secs_f64() * 1000.0;
-
-		if total_ms >= 50.0 {
-			for (instant, name) in timings {
-				print!("{} {:.04} ms | ", name, (instant - prev_ins).as_secs_f64() * 1000.0);
-				prev_ins = instant;
-			}
-			print!("Total: {:.04} ms\n", total_ms);
+		cur_frame = (cur_frame + 1) % PACK_SIZE;
+		if cur_frame == 0 {
+			frames_pack_start = Instant::now();
 		}
-
-
-		// println!("Render time: {:.03} ms | Events: {:.03} ms", frame_start.elapsed().as_secs_f64() * 1000.0, events_start.elapsed().as_secs_f64() * 1000.0);
 	}
 }

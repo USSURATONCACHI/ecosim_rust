@@ -61,13 +61,6 @@ pub fn current_time() -> f64 {
     ) / 1000000.0
 }
 
-pub fn current_time_nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-}
-
 pub const CAMERA_ZOOM_EXP: f64 = 1000.0;
 pub const CAMERA_VEL_EXP: f64 = 128.0;
 
@@ -88,6 +81,7 @@ pub struct Camera {
     pub zoom_exp: f64,
 }
 
+#[allow(dead_code)]
 impl Camera {
     pub fn new(start_x: f32, start_y: f32) -> Self {
         let now = current_time();

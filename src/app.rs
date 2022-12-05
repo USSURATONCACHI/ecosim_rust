@@ -78,6 +78,7 @@ pub struct App {
 	pub run_simulation: bool,
 	run_exactly: u64,
 	pub run_until: u64,
+	pub target_fps: u64,
 
 	selected_tab: MenuTab,
 	render_mode: RenderMode,
@@ -115,6 +116,7 @@ impl App {
 			run_simulation: false,
 			run_exactly: 1,
 			run_until: 0,
+			target_fps: 60,
 			selected_tab: MenuTab::View,
 
 			camera: Camera::new(camera_pos.0, camera_pos.1),
@@ -136,10 +138,6 @@ impl App {
 
 impl App {
 	pub fn update(&mut self, ctx: &egui::Context, world: &World, return_rect: &mut Option<Rect>) {
-		/*let world_size = unsafe { self.world.as_ref().unwrap().size() };
-		self.camera.wrap_x(world_size.0 as f32);
-		self.camera.wrap_y(world_size.1 as f32);*/
-
 		let (tps, tick, (size_x, size_y)) = {
 			(world.tps().tps_corrected(), world.cur_tick(), world.size())
 		};
@@ -291,6 +289,10 @@ impl App {
 										ui.label("Drag inertia");
 										ui.add(Slider::new(&mut self.camera.vel_inertia, 0.0..=1.0));
 										ui.end_row();
+
+										ui.label("FPS");
+										ui.add(DragValue::new(&mut self.target_fps).clamp_range(10..=1000));
+										ui.end_row();
 									});
 							}
 							MenuTab::Params => {
@@ -347,17 +349,6 @@ impl App {
 
 		*return_rect = Some(rect);
 	}
-}
-
-fn _load_image_from_path(path: &std::path::Path) -> Result<ColorImage, image::ImageError> {
-	let image = image::io::Reader::open(path)?.decode()?;
-	let size = [image.width() as _, image.height() as _];
-	let image_buffer = image.to_rgba8();
-	let pixels = image_buffer.as_flat_samples();
-	Ok(ColorImage::from_rgba_unmultiplied(
-		size,
-		pixels.as_slice(),
-	))
 }
 
 fn load_image_from_bytes(bytes: &[u8]) -> Result<ColorImage, image::ImageError> {

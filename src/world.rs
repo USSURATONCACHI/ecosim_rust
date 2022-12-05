@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use glow::{Context, HasContext, NativeFence, NativeTexture, Program, VertexArray};
+use glow::{Context, HasContext, NativeTexture, Program, VertexArray};
 use rand::Rng;
 use crate::app::AntiAliasing;
 use crate::util::TickCounter;
@@ -160,10 +160,6 @@ impl World {
 			vertex_array,
 			max_work_group_count: (max_wg_x, max_wg_y),
 		}
-	}
-
-	pub fn current_state(&self) -> NativeTexture {
-		self.current_buf
 	}
 
 	pub fn size(&self) -> (u64, u64) {

@@ -29,6 +29,6 @@ void calc_cell(ivec2 pos) {
     neighbours += imageLoad(current_state, pos + ivec2(1, 0)).x;
     neighbours += imageLoad(current_state, pos + ivec2(1, 1)).x;
 
-    bool cell_updated = imageLoad(current_state, pos).x > 0 ? (neighbours >= 4) : (neighbours >= 6);
+    bool cell_updated = imageLoad(current_state, pos).x > 0 ? (neighbours == 2 || neighbours == 3) : (neighbours == 3);
     imageStore(next_state, pos, cell_updated ? uvec4(1) : uvec4(0));
 }
