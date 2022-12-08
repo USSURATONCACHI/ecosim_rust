@@ -9,10 +9,10 @@ uniform vec2 u_camera_pos;
 uniform float u_camera_zoom;
 uniform int u_antialiasing;
 
-uniform sampler2D u_world_texture;
+uniform usampler2D u_world_texture;
 
-//#define WORLD_WRAP_X
-//#define WORLD_WRAP_Y
+// #define WORLD_WRAP_X
+// #define WORLD_WRAP_Y
 
 float cube(float x);
 float interp1(float x);
@@ -71,6 +71,7 @@ void main() {
 }
 
 vec4 render(vec2 frag_pos) {
+
     float cam_scale = pow(2.0, u_camera_zoom);
     vec2 world_coords = (frag_pos + u_camera_pos * cam_scale) / cam_scale;
 
@@ -98,9 +99,9 @@ vec4 render(vec2 frag_pos) {
 vec4 get_world_color(vec2 world_coords) {
     bool in_range = world_coords.x >= 0 && world_coords.y >= 0 && world_coords.x <= u_world_size.x && world_coords.y <= u_world_size.y;
 
-    vec4 texel = texelFetch(u_world_texture, ivec2(world_coords), 0);
+    vec4 texel = texelFetch(u_world_texture, ivec2(world_coords), 0).x != uint(0) ? vec4(1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 
-    return in_range ? vec4(texel.xyz, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    return in_range ? vec4(texel.xyz + 0.1, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 }
 
 float cube(float x) {

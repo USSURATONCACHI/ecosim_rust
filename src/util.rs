@@ -1,3 +1,4 @@
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 pub struct TickCounter {
@@ -61,13 +62,6 @@ pub fn current_time() -> f64 {
     ) / 1000000.0
 }
 
-pub fn current_time_nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-}
-
 pub const CAMERA_ZOOM_EXP: f64 = 1000.0;
 pub const CAMERA_VEL_EXP: f64 = 128.0;
 
@@ -88,6 +82,7 @@ pub struct Camera {
     pub zoom_exp: f64,
 }
 
+#[allow(dead_code)]
 impl Camera {
     pub fn new(start_x: f32, start_y: f32) -> Self {
         let now = current_time();
@@ -207,5 +202,63 @@ impl Camera {
         self.vel = self.next_vel;
         self.next_vel = (0.0, 0.0);
         self.vel_start_time = current_time();
+    }
+}
+
+
+pub struct RateManager {
+    pack_size: u32,
+    target_tick_rate: u32,
+    current_tick: u32,
+    pack_start: Instant,
+}
+
+impl RateManager {
+    pub fn new(pack_size: u32, target_tick_rate: u32) -> Self {
+        RateManager {
+            pack_size,
+            target_tick_rate,
+            current_tick: 0,
+            pack_start: Instant::now(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        self.current_tick = 0;
+        self.pack_start = Instant::now();
+    }
+
+    pub fn set_tick_rate(&mut self, rate: u32) {
+        self.target_tick_rate = rate;
+        self.reset();
+    }
+
+    pub fn tick_rate(&self) -> u32 {
+        self.target_tick_rate
+    }
+
+    pub fn register_tick(&mut self) {
+        self.current_tick += 1;
+
+        if self.current_tick >= self.pack_size {
+            self.current_tick -= self.pack_size;
+            self.pack_start = Instant::now();
+        }
+    }
+
+    pub fn next_tick_time(&mut self) -> Instant {
+        self.pack_start + Duration::from_secs_f64(((self.current_tick + 1) as f64) / (self.target_tick_rate as f64))
+    }
+
+    pub fn ticks_to_do_by_time(&mut self, time: Instant) -> u32 {
+        let total = (time - self.pack_start).as_secs_f64() * (self.target_tick_rate as f64);
+        let total = total as u32;
+
+        if total >= self.current_tick {
+            total - self.current_tick
+        } else {
+            0
+        }
     }
 }

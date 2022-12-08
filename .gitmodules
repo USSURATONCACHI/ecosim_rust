@@ -1,0 +1,4 @@
+[submodule "egui_sdl2_gl"]
+	path = egui_sdl2_gl
+	url = https://github.com/USSURATONCACHI/egui_sdl2_gl.git
+	branch = update_to_egui_0_18

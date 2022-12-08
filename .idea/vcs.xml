@@ -2,5 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/crates/egui" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/egui_sdl2_gl" vcs="Git" />
   </component>
 </project>
