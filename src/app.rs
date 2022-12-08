@@ -8,6 +8,7 @@ use crate::world::World;
 const ICON_PLAY: &[u8] = include_bytes!("../assets/img/play.png");
 const ICON_PAUSE: &[u8] = include_bytes!("../assets/img/pause.png");
 const ICON_PLAY_STOP: &[u8] = include_bytes!("../assets/img/play_and_stop.png");
+const ICON_STOP: &[u8] = include_bytes!("../assets/img/stop.png");
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum MenuTab {
@@ -96,10 +97,11 @@ pub struct App {
 
 impl App {
 	pub fn new(ctx: &egui::Context, camera_pos: (f32, f32)) -> Self {
-		let images: [(&str, &[u8]); 3] = [
+		let images: [(&str, &[u8]); 4] = [
 			("play", ICON_PLAY),
 			("pause", ICON_PAUSE),
 			("play_stop", ICON_PLAY_STOP),
+			("stop", ICON_STOP),
 		];
 
 		let images: HashMap<String, TextureHandle> = images
@@ -150,17 +152,16 @@ impl App {
 						let btn_size = ui.spacing().icon_width;
 						let run_simulation = self.run_simulation;
 						ui.horizontal(|ui| {
+							let is_blocked = self.run_until > world.cur_tick();
 							if self.run_simulation {
 								let pause = self.texture_handle("pause");
-								if ui.add(ImageButton::new(pause, (btn_size, btn_size))).clicked() {
+								if ui.add_enabled(!is_blocked, ImageButton::new(pause, (btn_size, btn_size))).clicked() {
 									self.run_simulation = false;
-									// self.tx_to_world.send(Message::RunSimulation(false)).unwrap();
 								}
 							} else {
 								let play = self.texture_handle("play");
-								if ui.add(ImageButton::new(play, (btn_size, btn_size))).clicked() {
+								if ui.add_enabled(!is_blocked, ImageButton::new(play, (btn_size, btn_size))).clicked() {
 									self.run_simulation = true;
-									// self.tx_to_world.send(Message::RunSimulation(true)).unwrap();
 								}
 							}
 
@@ -168,16 +169,28 @@ impl App {
 						});
 
 						ui.horizontal(|ui| {
-							let play_stop = self.texture_handle("play_stop");
-							let response = ui.add_enabled(!run_simulation, ImageButton::new(play_stop, (btn_size, btn_size)));
+							if self.run_until > world.cur_tick() {
+								let stop = self.texture_handle("stop");
+								let response = ui.add_enabled(!run_simulation, ImageButton::new(stop, (btn_size, btn_size)));
 
-							ui.label("Run exactly");
-							ui.add(DragValue::new(&mut self.run_exactly));
-							ui.label("ticks");
+								ui.label("Run exactly");
+								ui.add(DragValue::new(&mut self.run_exactly));
+								ui.label("ticks");
 
-							if response.clicked() {
-								self.run_until = self.run_exactly + tick;
-								// self.tx_to_world.send(Message::RunUntil(tick + self.run_exactly as u64)).unwrap();
+								if response.clicked() {
+									self.run_until = 0;
+								}
+							} else {
+								let play_stop = self.texture_handle("play_stop");
+								let response = ui.add_enabled(!run_simulation, ImageButton::new(play_stop, (btn_size, btn_size)));
+
+								ui.label("Run exactly");
+								ui.add(DragValue::new(&mut self.run_exactly));
+								ui.label("ticks");
+
+								if response.clicked() {
+									self.run_until = self.run_exactly + tick;
+								}
 							}
 						});
 
