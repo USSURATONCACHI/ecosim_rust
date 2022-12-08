@@ -87,8 +87,8 @@ pub struct App {
 	cam_vel_sensitivity: f32,
 	cam_zoom_sensitivity: f32,
 
-	is_ups_limited: bool,
-	ups_limit: u32,
+	pub is_ups_limited: bool,
+	pub ups_limit: u32,
 	pub antialiasing: AntiAliasing,
 
 	images: HashMap<String, TextureHandle>,
@@ -121,7 +121,7 @@ impl App {
 
 			camera: Camera::new(camera_pos.0, camera_pos.1),
 			cam_vel_sensitivity: 1.0,
-			cam_zoom_sensitivity: 1.0,
+			cam_zoom_sensitivity: 4.0,
 
 			render_mode: RenderMode::Food,
 			is_ups_limited: false,
@@ -325,7 +325,7 @@ impl App {
 		}
 		if response.dragged() {
 			let drag = response.drag_delta();
-			self.camera.on_drag((-drag.x / zoom_coef / self.cam_vel_sensitivity, drag.y / zoom_coef / self.cam_vel_sensitivity));
+			self.camera.on_drag((-drag.x / zoom_coef * self.cam_vel_sensitivity, drag.y / zoom_coef * self.cam_vel_sensitivity));
 		}
 		if response.drag_released() {
 			self.camera.on_drag_end();

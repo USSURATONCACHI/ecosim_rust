@@ -174,19 +174,25 @@ impl World {
 		&self.tps
 	}
 
+	pub fn use_program(&self) {
+		unsafe {
+			self.gl.use_program(Some(self.program));
+		}
+	}
+
 	pub fn update(&mut self) {
 		const WORK_GROUP_SIZE: u64 = 32;
 		unsafe {
-			self.gl.use_program(Some(self.program));
-
+			// self.gl.use_program(Some(self.program));
 			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::R8UI);
 			self.gl.bind_image_texture(1, self.next_buf, 0, false, 0, glow::READ_WRITE, glow::R8UI);
-
 			let calls_x = (self.size().0 + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 			let calls_y = (self.size().1 + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 
 			if calls_x <= self.max_work_group_count.0 as u64 && calls_y <= self.max_work_group_count.1 as u64 {
-				self.gl.uniform_2_u32( self.gl.get_uniform_location(self.program, "tile_offset").as_ref(), 0, 0);
+				if self.tick == 0 {
+					self.gl.uniform_2_u32( self.gl.get_uniform_location(self.program, "tile_offset").as_ref(), 0, 0);
+				}
 				self.gl.dispatch_compute(calls_x as u32, calls_y as u32, 1);
 			} else {
 				// Tiling

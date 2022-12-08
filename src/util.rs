@@ -1,3 +1,4 @@
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 pub struct TickCounter {
@@ -201,5 +202,58 @@ impl Camera {
         self.vel = self.next_vel;
         self.next_vel = (0.0, 0.0);
         self.vel_start_time = current_time();
+    }
+}
+
+
+pub struct RateManager {
+    pack_size: u32,
+    target_tick_rate: u32,
+    current_tick: u32,
+    pack_start: Instant,
+}
+
+impl RateManager {
+    pub fn new(pack_size: u32, target_tick_rate: u32) -> Self {
+        RateManager {
+            pack_size,
+            target_tick_rate,
+            current_tick: 0,
+            pack_start: Instant::now(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.current_tick = 0;
+        self.pack_start = Instant::now();
+    }
+
+    pub fn set_tick_rate(&mut self, rate: u32) {
+        self.target_tick_rate = rate;
+        self.reset();
+    }
+
+    pub fn register_tick(&mut self) {
+        self.current_tick += 1;
+
+        if self.current_tick >= self.pack_size {
+            self.current_tick -= self.pack_size;
+            self.pack_start = Instant::now();
+        }
+    }
+
+    pub fn next_tick_time(&mut self) -> Instant {
+        self.pack_start + Duration::from_secs_f64(((self.current_tick + 1) as f64) / (self.target_tick_rate as f64))
+    }
+
+    pub fn ticks_to_do_by_time(&mut self, time: Instant) -> u32 {
+        let total = (time - self.pack_start).as_secs_f64() * (self.target_tick_rate as f64);
+        let total = total as u32;
+
+        if total >= self.current_tick {
+            total - self.current_tick
+        } else {
+            0
+        }
     }
 }

@@ -8,20 +8,76 @@ use std::sync::Arc;
 use egui_backend::sdl2::video::GLProfile;
 use egui_backend::{egui, sdl2};
 use egui_backend::{sdl2::event::Event, DpiScaling, ShaderVersion};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 // Alias the backend to something less mouthful
 use egui_sdl2_gl as egui_backend;
 use egui_sdl2_gl::egui::Rect;
-use glow::{HasContext};
-use sdl2::video::{SwapInterval};
+use egui_sdl2_gl::EguiStateHandler;
+use egui_sdl2_gl::painter::Painter;
+use glow::{Context, HasContext};
+use sdl2::{EventPump, Sdl, VideoSubsystem};
+use sdl2::video::{GLContext, SwapInterval, Window};
+use sdl2::video::gl_attr::GLAttr;
 
 use crate::app::App;
+use crate::util::RateManager;
 use crate::world::{PaintData, World};
 
-const SCREEN_WIDTH: u32 = 800;
-const SCREEN_HEIGHT: u32 = 600;
+pub struct WindowData {
+	pub sdl_context: Sdl,
+	pub video_subsystem: VideoSubsystem,
+	pub window: Window,
+	pub ctx: GLContext,
+	pub gl: Arc<Context>,
+	pub event_pump: EventPump,
+}
+
+pub struct TediousDataBundle {
+	pub sdl_context: Sdl,					// used once
+	pub video_subsystem: VideoSubsystem,	// used once
+	pub ctx: GLContext,						// used once
+	pub window: Window,						// used in loop
+	pub gl: Arc<Context>,					// used in loop
+	pub event_pump: EventPump,				// used in loop
+
+	pub painter: Painter,					// used in loop
+	pub egui_state: EguiStateHandler,		// used in loop
+	pub egui_ctx: egui::Context,			// used in loop
+	pub start_time: Instant,				// used in loop
+}
 
 fn main() {
+	let win_data = set_up_window("Ecosim | Temporary game of life", 800, 600);
+
+	let (mut painter, mut egui_state) =
+		egui_backend::with_sdl2(
+			&win_data.window,
+			ShaderVersion::Default,
+			DpiScaling::Default
+		);
+	let egui_ctx = egui::Context::default();
+	let start_time = Instant::now();
+
+	let world = World::new(win_data.gl.clone(), (768, 786));
+	let app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
+
+	let data = TediousDataBundle {
+		sdl_context: 		win_data.sdl_context,
+		video_subsystem: 	win_data.video_subsystem,
+		ctx: 				win_data.ctx,
+		window: 			win_data.window,
+		gl: 				win_data.gl,
+		event_pump: 		win_data.event_pump,
+		painter,
+		egui_state,
+		egui_ctx,
+		start_time
+	};
+
+	run_loop(data, world, app);
+}
+
+pub fn set_up_window(title: &str, width: u32, height: u32) -> WindowData {
 	let sdl_context = sdl2::init().unwrap();
 	let video_subsystem = sdl_context.video().unwrap();
 	let gl_attr = video_subsystem.gl_attr();
@@ -31,22 +87,16 @@ fn main() {
 	gl_attr.set_multisample_samples(1);
 
 	let window = video_subsystem
-		.window(
-			"Ecosim | Temporary game of life",
-			SCREEN_WIDTH,
-			SCREEN_HEIGHT,
-		)
+		.window(title, width, height)
 		.opengl()
 		.resizable()
 		.build()
 		.unwrap();
 
 	// Create a window context
-	let _ctx = window.gl_create_context().unwrap();
-	let glow_gl = unsafe { glow::Context::from_loader_function(|name| video_subsystem.gl_get_proc_address(name) as *const _) };
+	let ctx = window.gl_create_context().unwrap();
+	let glow_gl = unsafe { Context::from_loader_function(|name| video_subsystem.gl_get_proc_address(name) as *const _) };
 	let glow_gl = Arc::new(glow_gl);
-	// Init egui stuff
-	let (mut painter, mut egui_state) = egui_backend::with_sdl2(&window, ShaderVersion::Default, DpiScaling::Default);
 	let mut event_pump = sdl_context.event_pump().unwrap();
 
 	window
@@ -54,100 +104,126 @@ fn main() {
 		.gl_set_swap_interval(SwapInterval::Immediate)
 		.unwrap();
 
-	let start_time = Instant::now();
-	let egui_ctx = egui::Context::default();
+	WindowData {
+		sdl_context,
+		video_subsystem,
+		window,
+		ctx,
+		gl: glow_gl,
+		event_pump
+	}
+}
 
-	let mut world = World::new(glow_gl.clone(), (768, 786));
+impl TediousDataBundle {
+	pub fn render_egui<F>(&mut self, run_ui: F)
+		where F: FnMut(&egui::Context)
+	{
+		self.egui_state.input.time = Some(self.start_time.elapsed().as_secs_f64());
+		let inputs = self.egui_state.input.take();
 
-	let mut app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
+		// Render egui
+		let outputs = self.egui_ctx.run(inputs, run_ui);
+		self.egui_state.process_output(&self.window, &outputs.platform_output);
 
-	// Each `PACK_SIZE` frames start time is being reset
-	const PACK_SIZE: u64 = 120;
-	let mut prev_fps = app.target_fps;
-	let mut frames_pack_start = Instant::now();
-	let mut cur_frame = 0_u64;
+		let paint_jobs = self.egui_ctx.tessellate(outputs.shapes);
+		self.painter.paint(None, paint_jobs, &outputs.textures_delta);
+	}
 
+	pub fn render_all(&mut self, app: &mut App, world: &World) {
+		let mut rect: Option<Rect> = None;
+		self.render_egui(
+			|ctx| app.update(ctx, world, &mut rect)
+		);
+
+		let rect = rect.unwrap();
+		set_viewport_rect(&self.gl, rect);
+
+		let vp_size = rect.max - rect.min;
+		let paint_data = PaintData {
+			screen_size: (vp_size.x, vp_size.y),
+			camera_pos: app.camera.pos(),
+			zoom: app.camera.zoom(),
+			antialiasing: app.antialiasing,
+		};
+		world.render(paint_data);
+
+		unsafe {
+			self.gl.viewport(0, 0, self.window.size().0 as i32, self.window.size().1 as i32);
+		}
+		self.window.gl_swap_window();
+	}
+
+	pub fn process_input(&mut self, event: Event) {
+		self.egui_state.process_input(&self.window, event, &mut self.painter);
+	}
+}
+
+fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
+	let mut ups_manager = RateManager::new(5, 2);
+	let mut fps_manager = RateManager::new(60, 60);
+	let mut prev_ups_limit = 0;
+
+	// Contains max theoretical performance
 	let mut assumed_ups = 100.0;	// updates per second
 
 	'running: loop {
-		if prev_fps != app.target_fps {
-			cur_frame = 0;
-			frames_pack_start = Instant::now();
-			prev_fps = app.target_fps;
+		let now = Instant::now();
+		let next_render_time = fps_manager.next_tick_time();
+
+		if prev_ups_limit != app.ups_limit {
+			prev_ups_limit = app.ups_limit;
+			ups_manager = RateManager::new(app.ups_limit.min(256),  app.ups_limit);
 		}
 
-		let next_frame_start = ((cur_frame + 1) as f64) / (app.target_fps as f64);
+		let time_left = next_render_time - now;
+		let max_ticks_to_do = (time_left.as_secs_f64() * assumed_ups) as u32;
 
-		if app.run_simulation || app.run_until > world.cur_tick()
-		{
-			let time_left = next_frame_start - frames_pack_start.elapsed().as_secs_f64();
-			let updates_to_do = (time_left * assumed_ups).max(1.0) as u64;
-			let updates_to_do = if app.run_until > world.cur_tick() {
-				updates_to_do.min(app.run_until - world.cur_tick())
-			} else {
-				updates_to_do
-			};
+		let ticks_to_do;
+		if !app.run_simulation {
+			ticks_to_do = 0;
+		} else if app.is_ups_limited {
+			let target_ticks_to_do = ups_manager.ticks_to_do_by_time(next_render_time);
+			ticks_to_do = target_ticks_to_do.min(max_ticks_to_do);
+		} else {
+			ticks_to_do = max_ticks_to_do;
+		}
 
-			if updates_to_do > 0 {
-				let update_start = Instant::now();
-				for _ in 0..updates_to_do {
-					world.update();
-				}
-				unsafe {
-					glow_gl.finish();
-				}
-				let current_ups = (updates_to_do as f64) / update_start.elapsed().as_secs_f64();
-				assumed_ups = (assumed_ups * 3.0 + current_ups) / 4.0;
+		if ticks_to_do > 0 {
+			let update_start = Instant::now();
+			world.use_program();
+			for _ in 0..ticks_to_do {
+				world.update();
+				ups_manager.register_tick();
 			}
-		}
-
-		if frames_pack_start.elapsed().as_secs_f64() < next_frame_start {
-			continue; // Waiting for frame
-		}
-
-		world.no_tick();
-		egui_state.input.time = Some(start_time.elapsed().as_secs_f64());
-		let inputs = egui_state.input.take();
-
-		// Render egui
-		let mut rect: Option<Rect> = None;
-		let outputs = egui_ctx.run(inputs, |egui_ctx| app.update(egui_ctx, &world, &mut rect));
-		egui_state.process_output(&window, &outputs.platform_output);
-		let paint_jobs = egui_ctx.tessellate(outputs.shapes);
-		painter.paint(None, paint_jobs, &outputs.textures_delta);
-
-		// Render world on top
-		if let Some(rect) = rect {
 			unsafe {
-				glow_gl.viewport(rect.min.x as i32, rect.min.y as i32,
-								 (rect.max.x - rect.min.x) as i32, (rect.max.y - rect.min.y) as i32);
-				let vp_size = rect.max - rect.min;
-				let paint_data = PaintData {
-					screen_size: (vp_size.x, vp_size.y),
-					camera_pos: app.camera.pos(),
-					zoom: app.camera.zoom(),
-					antialiasing: app.antialiasing,
-				};
-				world.render(paint_data);
-				glow_gl.viewport(0, 0, window.size().0 as i32, window.size().1 as i32);
+				data.gl.finish();
 			}
+			let current_ups = (ticks_to_do as f64) / update_start.elapsed().as_secs_f64();
+			assumed_ups = (assumed_ups * 3.0 + current_ups) / 4.0;
 		}
 
-		window.gl_swap_window();
+		let now = Instant::now();
+		if app.is_ups_limited && now < next_render_time {
+			std::thread::sleep(next_render_time - now);
+		}
 
-		for event in event_pump.poll_iter() {
+		if now >= next_render_time {
+			data.render_all(&mut app, &world);
+			fps_manager.register_tick();
+		}
+
+		for event in data.event_pump.poll_iter() {
 			match event {
 				Event::Quit { .. } => break 'running,
-				_ => {
-					// Process input event
-					egui_state.process_input(&window, event, &mut painter);
-				}
+				_ => data.egui_state.process_input(&data.window, event, &mut data.painter),
 			}
 		}
+	}
+}
 
-		cur_frame = (cur_frame + 1) % PACK_SIZE;
-		if cur_frame == 0 {
-			frames_pack_start = Instant::now();
-		}
+pub fn set_viewport_rect(gl: &Context, rect: Rect) {
+	unsafe {
+		gl.viewport(rect.min.x as i32, rect.min.y as i32,
+					(rect.max.x - rect.min.x) as i32, (rect.max.y - rect.min.y) as i32);
 	}
 }
