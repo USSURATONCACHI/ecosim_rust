@@ -1,8 +1,6 @@
 # ecosim_rust
 Evolution simulation written in Rust (GLSL actually because of compute shaders)
 
-Currently available only in use_sdl2 branch.
-
 ***To run it on your machine***, use:
 ```
 git clone https://github.com/USSURATONCACHI/ecosim_rust.git
