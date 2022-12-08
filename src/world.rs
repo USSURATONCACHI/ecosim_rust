@@ -239,3 +239,15 @@ impl World {
 		self.tps.no_tick();
 	}
 }
+
+impl Drop for World {
+	fn drop(&mut self) {
+		unsafe {
+			self.gl.delete_texture(self.current_buf);
+			self.gl.delete_texture(self.next_buf);
+			self.gl.delete_vertex_array(self.vertex_array);
+			self.gl.delete_program(self.program);
+			self.gl.delete_program(self.render_program);
+		}
+	}
+}
