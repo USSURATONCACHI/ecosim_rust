@@ -173,21 +173,32 @@ fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
 			prev_ups_limit = app.ups_limit;
 			ups_manager = RateManager::new(app.ups_limit.min(256),  app.ups_limit);
 		}
+		if fps_manager.tick_rate() != app.target_fps as u32 {
+			fps_manager.set_tick_rate(app.target_fps as u32);
+		}
 
 		let time_left = next_render_time - now;
 		let max_ticks_to_do = (time_left.as_secs_f64() * assumed_ups) as u32;
 
+		let simulation_running = app.run_until > world.cur_tick() || app.run_simulation;
 		let ticks_to_do;
-		if !app.run_simulation {
+		if app.run_until > world.cur_tick() {
+			ticks_to_do	= (app.run_until - world.cur_tick()).min(max_ticks_to_do as u64);
+		} else if !app.run_simulation {
 			ticks_to_do = 0;
-		} else if app.is_ups_limited {
-			let target_ticks_to_do = ups_manager.ticks_to_do_by_time(next_render_time);
-			ticks_to_do = target_ticks_to_do.min(max_ticks_to_do);
-		} else {
-			ticks_to_do = max_ticks_to_do;
+		} else  {
+			ticks_to_do = max_ticks_to_do as u64;
 		}
 
+		let ticks_to_do = if app.is_ups_limited {
+			let target_ticks_to_do = ups_manager.ticks_to_do_by_time(next_render_time) as u64;
+			target_ticks_to_do.min(ticks_to_do)
+		} else {
+			ticks_to_do
+		};
+
 		if ticks_to_do > 0 {
+			// UPDATE
 			let update_start = Instant::now();
 			world.use_program();
 			for _ in 0..ticks_to_do {
@@ -202,11 +213,13 @@ fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
 		}
 
 		let now = Instant::now();
-		if app.is_ups_limited && now < next_render_time {
+		if (app.is_ups_limited || !simulation_running) && now < next_render_time {
 			std::thread::sleep(next_render_time - now);
 		}
 
 		if now >= next_render_time {
+			// RENDER
+			world.no_tick(); // Update TPS counter
 			data.render_all(&mut app, &world);
 			fps_manager.register_tick();
 		}

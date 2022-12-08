@@ -229,10 +229,13 @@ impl RateManager {
         self.pack_start = Instant::now();
     }
 
-    #[allow(dead_code)]
     pub fn set_tick_rate(&mut self, rate: u32) {
         self.target_tick_rate = rate;
         self.reset();
+    }
+
+    pub fn tick_rate(&self) -> u32 {
+        self.target_tick_rate
     }
 
     pub fn register_tick(&mut self) {
