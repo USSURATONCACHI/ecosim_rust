@@ -8,7 +8,7 @@ use std::sync::Arc;
 use egui_backend::sdl2::video::GLProfile;
 use egui_backend::{egui, sdl2};
 use egui_backend::{sdl2::event::Event, DpiScaling, ShaderVersion};
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 // Alias the backend to something less mouthful
 use egui_sdl2_gl as egui_backend;
 use egui_sdl2_gl::egui::Rect;
@@ -17,7 +17,6 @@ use egui_sdl2_gl::painter::Painter;
 use glow::{Context, HasContext};
 use sdl2::{EventPump, Sdl, VideoSubsystem};
 use sdl2::video::{GLContext, SwapInterval, Window};
-use sdl2::video::gl_attr::GLAttr;
 
 use crate::app::App;
 use crate::util::RateManager;
@@ -49,7 +48,7 @@ pub struct TediousDataBundle {
 fn main() {
 	let win_data = set_up_window("Ecosim | Temporary game of life", 800, 600);
 
-	let (mut painter, mut egui_state) =
+	let (painter, egui_state) =
 		egui_backend::with_sdl2(
 			&win_data.window,
 			ShaderVersion::Default,
@@ -97,7 +96,7 @@ pub fn set_up_window(title: &str, width: u32, height: u32) -> WindowData {
 	let ctx = window.gl_create_context().unwrap();
 	let glow_gl = unsafe { Context::from_loader_function(|name| video_subsystem.gl_get_proc_address(name) as *const _) };
 	let glow_gl = Arc::new(glow_gl);
-	let mut event_pump = sdl_context.event_pump().unwrap();
+	let event_pump = sdl_context.event_pump().unwrap();
 
 	window
 		.subsystem()
