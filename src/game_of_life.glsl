@@ -6,6 +6,7 @@ layout(r8ui, binding = 1) uniform uimage2D next_state;
 
 uniform ivec2 world_size;
 uniform uvec2 tile_offset;
+// uniform uint current_tick;
 
 void calc_cell(ivec2 pos);
 
@@ -30,5 +31,10 @@ void calc_cell(ivec2 pos) {
     neighbours += imageLoad(current_state, pos + ivec2(1, 1)).x;
 
     bool cell_updated = imageLoad(current_state, pos).x > 0 ? (neighbours == 2 || neighbours == 3) : (neighbours == 3);
+
+    if (pos.x == 0 || pos.y == 0 || pos.x == (world_size.x - 1) || pos.y == (world_size.y - 1)) {
+        cell_updated = !cell_updated;
+    }
+
     imageStore(next_state, pos, cell_updated ? uvec4(1) : uvec4(0));
 }
