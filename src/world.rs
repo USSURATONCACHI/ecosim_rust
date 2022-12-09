@@ -189,6 +189,8 @@ impl World {
 			let calls_x = (self.size().0 + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 			let calls_y = (self.size().1 + WORK_GROUP_SIZE - 1) / WORK_GROUP_SIZE;
 
+			// self.gl.uniform_1_u32(self.gl.get_uniform_location(self.program, "current_tick").as_ref(), self.tick as u32);
+
 			if calls_x <= self.max_work_group_count.0 as u64 && calls_y <= self.max_work_group_count.1 as u64 {
 				if self.tick == 0 {
 					self.gl.uniform_2_u32( self.gl.get_uniform_location(self.program, "tile_offset").as_ref(), 0, 0);

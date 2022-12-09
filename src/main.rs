@@ -178,7 +178,7 @@ fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
 		}
 
 		let time_left = next_render_time - now;
-		let max_ticks_to_do = (time_left.as_secs_f64() * assumed_ups) as u32;
+		let max_ticks_to_do = ((time_left.as_secs_f64() * assumed_ups) as u32).max(1);
 
 		let simulation_running = app.run_until > world.cur_tick() || app.run_simulation;
 		let ticks_to_do;
@@ -197,6 +197,7 @@ fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
 			ticks_to_do
 		};
 
+		// println!("Ticks to do: {} / {}", ticks_to_do, max_ticks_to_do);
 		if ticks_to_do > 0 {
 			// UPDATE
 			let update_start = Instant::now();
