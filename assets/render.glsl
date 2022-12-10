@@ -10,7 +10,7 @@ uniform float u_camera_zoom;
 uniform int u_antialiasing;
 
 uniform usampler2D u_world_texture;
-uniform sampler2D u_landscape;
+uniform isampler2D u_landscape;
 
 #include<terrain.glsl>
 
@@ -103,8 +103,21 @@ vec4 get_world_color(vec2 world_coords) {
     bool in_range = world_coords.x >= 0 && world_coords.y >= 0 && world_coords.x <= u_world_size.x && world_coords.y <= u_world_size.y;
 
     //uint terrain_type = texelFetch(u_world_texture, ivec2(world_coords), 0).x;
-    float height = texelFetch(u_landscape, ivec2(world_coords), 0).x;
-    vec3 color = height <= 0.4 ? vec3(height / 3.0, height / 2.0,  0.6) : vec3(height);
+    int i_height = texelFetch(u_landscape, ivec2(world_coords), 0).x;
+    float height = float(i_height) / 1000000.0;
+    vec3 color;
+
+    if (height <= 0.4) {
+        color = vec3(height / 3.0, height / 2.0,  0.6);
+    } else if (height <= 0.45) {
+        color = getTerrainColor(Terrain_Beach) + height - 0.4;
+    } else if (height <= 0.75) {
+        color = getTerrainColor(Terrain_Plains) - (height - 0.45) / 2.0;
+    } else if (height <= 0.99) {
+        color = getTerrainColor(Terrain_Mountains) + height - 0.75;
+    } else {
+        color = getTerrainColor(Terrain_SnowyMountains) - 0.15 + (height - 0.98);
+    }
 
     return in_range ? vec4(color, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 }

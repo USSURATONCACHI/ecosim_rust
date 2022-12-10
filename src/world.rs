@@ -1,11 +1,13 @@
 use std::sync::Arc;
+use std::time::{Instant, UNIX_EPOCH};
 use glow::{Context, HasContext, NativeTexture, Program, VertexArray};
 use image::EncodableLayout;
-use noise::{Fbm, NoiseFn, Perlin};
+use noise::{Fbm, MultiFractal, NoiseFn, Perlin};
 use rand::Rng;
 use crate::app::AntiAliasing;
 use crate::glsl_expand::ShaderContext;
-use crate::util::TickCounter;
+use crate::terrain::ErosionGpu;
+use crate::util::{compile_program, TickCounter};
 
 const RENDER_VERT_SOURCE: &str =
 r#"
@@ -28,44 +30,6 @@ r#"
 	}
 "#;
 
-pub fn compile_program<'a>(gl: &Context, shader_sources: impl IntoIterator<Item = (u32, &'a str)>) -> Result<Program, String> {
-	use glow::HasContext as _;
-	unsafe {
-		let program = gl.create_program()
-			.map_err(|err| format!("Cannot create program: {}", err))?;
-
-		let shaders: Vec<_> = shader_sources
-			.into_iter()
-			.map(|(shader_type, shader_source)| {
-				let shader = gl
-					.create_shader(shader_type)
-					.map_err(|err| format!("Cannot create shader: {}", err))
-					.unwrap();	// TODO
-
-				gl.shader_source(shader, shader_source);
-				gl.compile_shader(shader);
-				if !gl.get_shader_compile_status(shader) {
-					panic!("Cannot compile shader: {}", gl.get_shader_info_log(shader));
-				}
-				gl.attach_shader(program, shader);
-				shader
-			})
-			.collect();
-
-		gl.link_program(program);
-		if !gl.get_program_link_status(program) {
-			return Err(format!("Cannot link program: {}", gl.get_program_info_log(program)));
-		}
-
-		for shader in shaders {
-			gl.detach_shader(program, shader);
-			gl.delete_shader(shader);
-		}
-
-		Ok(program)
-	}
-}
-
 #[derive(Clone, Debug)]
 pub struct PaintData {
 	pub screen_size: (f32, f32),
@@ -83,6 +47,7 @@ pub struct World {
 	next_buf: NativeTexture,
 
 	landscape: NativeTexture,
+	erosion: ErosionGpu,
 
 	size: (u64, u64),
 
@@ -96,34 +61,12 @@ pub struct World {
 }
 
 fn create_landscape(gl: &Context, size: (u64, u64)) -> NativeTexture {
-	let texture;
+	let nanos = UNIX_EPOCH.elapsed().unwrap().as_nanos();
+	let noise: Fbm<Perlin> = Fbm::new(nanos as u32).set_frequency(0.0025);
 
-	let noise: Fbm<Perlin> = Fbm::new(42);
+	let mut map = crate::terrain::gen_height(&noise, size);
 
-	let arr_size = size.0 * size.1;
-	let mut initial_state: Box<[f32]> = vec![0.0_f32; arr_size as usize].into_boxed_slice();
-	for x in 0..size.0 {
-		for y in 0..size.1 {
-			let id = (y * size.0 + x) as usize;
-			let x = x as f64;
-			let y = y as f64;
-
-			let val = noise.get([x / 100.0, y / 100.0]) as f32;
-			initial_state[id] = val / 2.0 + 0.5;
-		}
-	}
-
-	unsafe {
-		texture = gl.create_texture().unwrap();
-		gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-		gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-		gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
-		gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::R32F as i32,
-						size.0 as i32, size.1 as i32, 0,
-						glow::RED, glow::FLOAT, Some(initial_state.as_bytes()));
-	}
-
-	texture
+	crate::terrain::convert_to_texture(gl, size, &map)
 }
 
 impl World {
@@ -192,12 +135,15 @@ impl World {
 			max_wg_y = gl.get_parameter_indexed_i32(glow::MAX_COMPUTE_WORK_GROUP_COUNT, 1) as usize;
 		}
 
+		let erosion = ErosionGpu::new(gl.clone(), glsl_manager, size);
+
 		World {
 			gl,
 			program,
 			current_buf,
 			next_buf,
 			landscape,
+			erosion,
 			size,
 			tps: TickCounter::new(30),
 			tick: 0,
@@ -226,7 +172,10 @@ impl World {
 	}
 
 	pub fn update(&mut self) {
-		const WORK_GROUP_SIZE: u64 = 32;
+		self.erosion.erode(self.size, self.landscape, 2000);
+		self.tps.tick();
+		self.tick += 1;
+		/*const WORK_GROUP_SIZE: u64 = 32;
 		unsafe {
 			// self.gl.use_program(Some(self.program));
 			self.gl.bind_image_texture(0, self.current_buf, 0, false, 0, glow::READ_WRITE, glow::R8UI);
@@ -258,7 +207,7 @@ impl World {
 			self.tps.tick();
 			self.tick += 1;
 		}
-		std::mem::swap(&mut self.current_buf, &mut self.next_buf);
+		std::mem::swap(&mut self.current_buf, &mut self.next_buf);*/
 	}
 
 	pub fn render(&self, data: PaintData) {
