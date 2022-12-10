@@ -1,7 +1,10 @@
 use std::sync::Arc;
 use glow::{Context, HasContext, NativeTexture, Program, VertexArray};
+use image::EncodableLayout;
+use noise::{Fbm, NoiseFn, Perlin};
 use rand::Rng;
 use crate::app::AntiAliasing;
+use crate::glsl_expand::ShaderContext;
 use crate::util::TickCounter;
 
 const RENDER_VERT_SOURCE: &str =
@@ -24,7 +27,6 @@ r#"
 		gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
 	}
 "#;
-const RENDER_FRAG_SOURCE: &str = include_str!("../assets/main.glsl");
 
 pub fn compile_program<'a>(gl: &Context, shader_sources: impl IntoIterator<Item = (u32, &'a str)>) -> Result<Program, String> {
 	use glow::HasContext as _;
@@ -80,6 +82,8 @@ pub struct World {
 	current_buf: NativeTexture,
 	next_buf: NativeTexture,
 
+	landscape: NativeTexture,
+
 	size: (u64, u64),
 
 	tps: TickCounter,
@@ -91,8 +95,47 @@ pub struct World {
 	max_work_group_count: (usize, usize),
 }
 
+fn create_landscape(gl: &Context, size: (u64, u64)) -> NativeTexture {
+	let texture;
+
+	let noise: Fbm<Perlin> = Fbm::new(42);
+
+	let arr_size = size.0 * size.1;
+	let mut initial_state: Box<[f32]> = vec![0.0_f32; arr_size as usize].into_boxed_slice();
+	for x in 0..size.0 {
+		for y in 0..size.1 {
+			let id = (y * size.0 + x) as usize;
+			let x = x as f64;
+			let y = y as f64;
+
+			let val = noise.get([x / 100.0, y / 100.0]) as f32;
+			initial_state[id] = val / 2.0 + 0.5;
+		}
+	}
+
+	unsafe {
+		texture = gl.create_texture().unwrap();
+		gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+		gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+		gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+		gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::R32F as i32,
+						size.0 as i32, size.1 as i32, 0,
+						glow::RED, glow::FLOAT, Some(initial_state.as_bytes()));
+	}
+
+	texture
+}
+
 impl World {
-	pub fn new(gl: Arc<Context>, size: (u64, u64)) -> Self {
+	pub fn new(gl: Arc<Context>, size: (u64, u64), glsl_manager: &mut ShaderContext) -> Self {
+		let render_shader = glsl_manager
+			.get_file_processed("assets/render.glsl").unwrap()
+			.current_text().clone();
+
+		let game_of_life_shader = glsl_manager
+			.get_file_processed("assets/game_of_life.glsl").unwrap()
+			.current_text().clone();
+
 		let arr_size = size.0 * size.1;
 		let mut rng = rand::thread_rng();
 
@@ -126,15 +169,16 @@ impl World {
 		};
 		let current_buf = create_texture(&initial_state);
 		let next_buf = create_texture(&empty_state);
+		let landscape = create_landscape(gl.as_ref(), size);
 
 		let sources = [
-			(glow::COMPUTE_SHADER, include_str!("game_of_life.glsl"))
+			(glow::COMPUTE_SHADER, game_of_life_shader.as_str())
 		];
 		let program = compile_program(&gl, sources).unwrap();
 
 		let render_sources = [
 			(glow::VERTEX_SHADER, RENDER_VERT_SOURCE),
-			(glow::FRAGMENT_SHADER, RENDER_FRAG_SOURCE),
+			(glow::FRAGMENT_SHADER, render_shader.as_str()),
 		];
 		let render_program = compile_program(&gl, render_sources).unwrap();
 		let vertex_array = unsafe { gl.create_vertex_array().unwrap() };
@@ -153,6 +197,7 @@ impl World {
 			program,
 			current_buf,
 			next_buf,
+			landscape,
 			size,
 			tps: TickCounter::new(30),
 			tick: 0,
@@ -225,6 +270,11 @@ impl World {
 			gl.active_texture(glow::TEXTURE2);
 			gl.bind_texture(glow::TEXTURE_2D, Some(self.current_buf));
 			gl.uniform_1_i32(loc("u_world_texture").as_ref(), 2);
+
+			gl.active_texture(glow::TEXTURE3);
+			gl.bind_texture(glow::TEXTURE_2D, Some(self.landscape));
+			gl.uniform_1_i32(loc("u_landscape").as_ref(), 3);
+
 			gl.uniform_1_i32(loc("u_antialiasing").as_ref(), data.antialiasing as i32);
 
 			gl.uniform_2_f32(loc("u_world_size").as_ref(), self.size.0 as f32, self.size.1 as f32);
@@ -253,3 +303,52 @@ impl Drop for World {
 		}
 	}
 }
+/*
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum Terrain {
+	Ocean = 0,
+	Shallow = 1,
+	Beach = 2,
+	Swamp = 3,
+	Lowland = 4,
+	Plains = 5,
+	Grassland = 6,
+	Hills = 7,
+	Desert = 8,
+	Foothills = 9,
+	Mountains = 10,
+	SnowyMountains = 11,
+}
+
+pub fn all_terrains() -> [Terrain; 12] {
+	[
+		Terrain::Ocean,
+		Terrain::Shallow,
+		Terrain::Beach,
+		Terrain::Swamp,
+		Terrain::Lowland,
+		Terrain::Plains,
+		Terrain::Grassland,
+		Terrain::Hills,
+		Terrain::Desert,
+		Terrain::Foothills,
+		Terrain::Mountains ,
+		Terrain::SnowyMountains,
+	]
+}
+
+pub fn generate_landscape(size: (u64, u64)) -> Box<[Terrain]> {
+	let mut data: Box<[Terrain]> = vec![Terrain::Ocean; (size.0 * size.1) as usize].into_boxed_slice();
+	let id = |x: u64, y: u64| (y * size.1 + x) as usize;
+
+	for x in 0..size.0 {
+		for y in 0..size.1 {
+			let cell_id = id(x, y);
+
+
+		}
+	}
+
+	return data;
+}*/

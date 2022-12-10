@@ -10,6 +10,9 @@ uniform float u_camera_zoom;
 uniform int u_antialiasing;
 
 uniform usampler2D u_world_texture;
+uniform sampler2D u_landscape;
+
+#include<terrain.glsl>
 
 // #define WORLD_WRAP_X
 // #define WORLD_WRAP_Y
@@ -99,9 +102,11 @@ vec4 render(vec2 frag_pos) {
 vec4 get_world_color(vec2 world_coords) {
     bool in_range = world_coords.x >= 0 && world_coords.y >= 0 && world_coords.x <= u_world_size.x && world_coords.y <= u_world_size.y;
 
-    vec4 texel = texelFetch(u_world_texture, ivec2(world_coords), 0).x != uint(0) ? vec4(1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    //uint terrain_type = texelFetch(u_world_texture, ivec2(world_coords), 0).x;
+    float height = texelFetch(u_landscape, ivec2(world_coords), 0).x;
+    vec3 color = height <= 0.4 ? vec3(height / 3.0, height / 2.0,  0.6) : vec3(height);
 
-    return in_range ? vec4(texel.xyz + 0.1, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+    return in_range ? vec4(color, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 }
 
 float cube(float x) {

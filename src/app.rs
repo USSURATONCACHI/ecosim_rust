@@ -5,10 +5,10 @@ use egui_sdl2_gl::egui::panel::Side;
 use crate::util::Camera;
 use crate::world::World;
 
-const ICON_PLAY: &[u8] = include_bytes!("../assets/img/play.png");
-const ICON_PAUSE: &[u8] = include_bytes!("../assets/img/pause.png");
-const ICON_PLAY_STOP: &[u8] = include_bytes!("../assets/img/play_and_stop.png");
-const ICON_STOP: &[u8] = include_bytes!("../assets/img/stop.png");
+const ICON_PLAY: &[u8] = include_bytes!("img/play.png");
+const ICON_PAUSE: &[u8] = include_bytes!("img/pause.png");
+const ICON_PLAY_STOP: &[u8] = include_bytes!("img/play_and_stop.png");
+const ICON_STOP: &[u8] = include_bytes!("img/stop.png");
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum MenuTab {

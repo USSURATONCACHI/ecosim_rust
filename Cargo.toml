@@ -11,6 +11,15 @@ sdl2 = { version = "0.35.2", features = ["bundled", "static-link"] }
 egui_sdl2_gl = { path = "egui_sdl2_gl" }
 glow = "0.11.2"
 rand = "0.8.5"
+noise = "0.8.2"
+
+path-dedot = "3.0.17"
+regex = "1.5.5"
+lazy_static = "1.4.0"
+
+
+[build-dependencies]
+walkdir = "*"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

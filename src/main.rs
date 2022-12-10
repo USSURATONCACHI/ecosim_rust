@@ -3,6 +3,7 @@
 mod app;
 mod util;
 mod world;
+mod glsl_expand;
 
 use std::sync::Arc;
 use egui_backend::sdl2::video::GLProfile;
@@ -19,6 +20,7 @@ use sdl2::{EventPump, Sdl, VideoSubsystem};
 use sdl2::video::{GLContext, SwapInterval, Window};
 
 use crate::app::App;
+use crate::glsl_expand::ShaderContext;
 use crate::util::RateManager;
 use crate::world::{PaintData, World};
 
@@ -47,6 +49,7 @@ pub struct TediousDataBundle {
 
 fn main() {
 	let win_data = set_up_window("Ecosim | Temporary game of life", 800, 600);
+	let mut glsl_manager = ShaderContext::new().unwrap();
 
 	let (painter, egui_state) =
 		egui_backend::with_sdl2(
@@ -57,7 +60,7 @@ fn main() {
 	let egui_ctx = egui::Context::default();
 	let start_time = Instant::now();
 
-	let world = World::new(win_data.gl.clone(), (768, 786));
+	let world = World::new(win_data.gl.clone(), (1024, 1024), &mut glsl_manager);
 	let app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
 
 	let data = TediousDataBundle {
