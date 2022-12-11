@@ -42,8 +42,8 @@ impl ToString for MenuTab {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum RenderMode {
-	Food,
+pub enum RenderMode {
+	Food = 0,
 	Energy,
 	Health,
 	Alive,
@@ -82,7 +82,7 @@ pub struct App {
 	pub target_fps: u64,
 
 	selected_tab: MenuTab,
-	render_mode: RenderMode,
+	pub render_mode: RenderMode,
 
 	pub camera: Camera,
 	cam_vel_sensitivity: f32,

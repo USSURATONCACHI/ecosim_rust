@@ -9,10 +9,19 @@ uniform vec2 u_camera_pos;
 uniform float u_camera_zoom;
 uniform int u_antialiasing;
 
+uniform uint u_render_type;
+
 uniform usampler2D u_world_texture;
 uniform isampler2D u_landscape;
 
-#include<terrain.glsl>
+float get_pixel(ivec2 pos);
+
+#include<terrain/terrain.glsl>
+
+#define GRADIENT_GLSL__GET_PIXEL(pos) get_pixel(pos)
+#define GRADIENT_GLSL__MAP_WIDTH u_world_size.x
+#define GRADIENT_GLSL__MAP_HEIGHT u_world_size.y
+#include<terrain/gradient.glsl>
 
 // #define WORLD_WRAP_X
 // #define WORLD_WRAP_Y
@@ -99,6 +108,12 @@ vec4 render(vec2 frag_pos) {
     return color;
 }
 
+#define INT_VAL_RANGE 1000000
+float get_pixel(ivec2 pos) {
+    int int_val = texelFetch(u_landscape, pos, 0).x;
+    return float(int_val) / float(INT_VAL_RANGE);
+}
+
 vec4 get_world_color(vec2 world_coords) {
     bool in_range = world_coords.x >= 0 && world_coords.y >= 0 && world_coords.x <= u_world_size.x && world_coords.y <= u_world_size.y;
 
@@ -107,16 +122,23 @@ vec4 get_world_color(vec2 world_coords) {
     float height = float(i_height) / 1000000.0;
     vec3 color;
 
-    if (height <= 0.4) {
-        color = vec3(height / 3.0, height / 2.0,  0.6);
-    } else if (height <= 0.45) {
-        color = getTerrainColor(Terrain_Beach) + height - 0.4;
-    } else if (height <= 0.75) {
-        color = getTerrainColor(Terrain_Plains) - (height - 0.45) / 2.0;
-    } else if (height <= 0.99) {
-        color = getTerrainColor(Terrain_Mountains) + height - 0.75;
+    if (u_render_type == uint(0)) {
+        color = vec3(height);
+    } else if (u_render_type == uint(1)) {
+        if (height <= 0.4) {
+            color = vec3(height / 3.0, height / 2.0,  0.6);
+        } else if (height <= 0.45) {
+            color = getTerrainColor(Terrain_Beach) + height - 0.4;
+        } else if (height <= 0.9) {
+            color = getTerrainColor(Terrain_Plains) - (height - 0.45) / 2.0;
+        } else if (height <= 0.99) {
+            color = getTerrainColor(Terrain_Mountains) + height - 0.9;
+        } else {
+            color = getTerrainColor(Terrain_SnowyMountains) - 0.15 + (height - 0.98);
+        }
     } else {
-        color = getTerrainColor(Terrain_SnowyMountains) - 0.15 + (height - 0.98);
+        vec2 grad = CalculateHeightAndGradient(world_coords).gradient;
+        color = vec3(abs(grad) * 8.0, 0.0) * vec3(height);
     }
 
     return in_range ? vec4(color, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);

@@ -282,19 +282,26 @@ pub fn compile_program<'a>(gl: &Context, shader_sources: impl IntoIterator<Item 
                 gl.shader_source(shader, shader_source);
                 gl.compile_shader(shader);
                 if !gl.get_shader_compile_status(shader) {
-                    panic!("Cannot compile shader: {}", gl.get_shader_info_log(shader));
+                    Err(format!("Cannot compile shader: {}", gl.get_shader_info_log(shader)))
+                } else {
+                    gl.attach_shader(program, shader);
+                    Ok(shader)
                 }
-                gl.attach_shader(program, shader);
-                shader
             })
             .collect();
+
+        let mut checked_shaders = vec![];
+
+        for result in shaders {
+            checked_shaders.push(result?);
+        }
 
         gl.link_program(program);
         if !gl.get_program_link_status(program) {
             return Err(format!("Cannot link program: {}", gl.get_program_info_log(program)));
         }
 
-        for shader in shaders {
+        for shader in checked_shaders {
             gl.detach_shader(program, shader);
             gl.delete_shader(shader);
         }

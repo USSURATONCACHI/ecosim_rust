@@ -1,8 +1,6 @@
 use std::sync::Arc;
-use std::time::{Instant, UNIX_EPOCH};
 use glow::{Context, HasContext, NativeTexture, Program, VertexArray};
-use image::EncodableLayout;
-use noise::{Fbm, MultiFractal, NoiseFn, Perlin};
+use noise::{Fbm, MultiFractal, Perlin};
 use rand::Rng;
 use crate::app::AntiAliasing;
 use crate::glsl_expand::ShaderContext;
@@ -36,6 +34,7 @@ pub struct PaintData {
 	pub camera_pos: (f32, f32),
 	pub zoom: f32,
 	pub antialiasing: AntiAliasing,
+	pub render_mode: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -61,10 +60,10 @@ pub struct World {
 }
 
 fn create_landscape(gl: &Context, size: (u64, u64)) -> NativeTexture {
-	let nanos = UNIX_EPOCH.elapsed().unwrap().as_nanos();
-	let noise: Fbm<Perlin> = Fbm::new(nanos as u32).set_frequency(0.0025);
+	//let nanos = UNIX_EPOCH.elapsed().unwrap().as_nanos();
+	let noise: Fbm<Perlin> = Fbm::new(42).set_frequency(0.005);
 
-	let mut map = crate::terrain::gen_height(&noise, size);
+	let map = crate::terrain::gen_height(&noise, size);
 
 	crate::terrain::convert_to_texture(gl, size, &map)
 }
@@ -172,7 +171,7 @@ impl World {
 	}
 
 	pub fn update(&mut self) {
-		self.erosion.erode(self.size, self.landscape, 2000);
+		self.landscape = self.erosion.erode(self.landscape, 1, self.tick as i32);
 		self.tps.tick();
 		self.tick += 1;
 		/*const WORK_GROUP_SIZE: u64 = 32;
@@ -224,6 +223,7 @@ impl World {
 			gl.bind_texture(glow::TEXTURE_2D, Some(self.landscape));
 			gl.uniform_1_i32(loc("u_landscape").as_ref(), 3);
 
+			gl.uniform_1_u32(loc("u_render_type").as_ref(), data.render_mode);
 			gl.uniform_1_i32(loc("u_antialiasing").as_ref(), data.antialiasing as i32);
 
 			gl.uniform_2_f32(loc("u_world_size").as_ref(), self.size.0 as f32, self.size.1 as f32);

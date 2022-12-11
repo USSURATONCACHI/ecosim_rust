@@ -22,7 +22,6 @@ use sdl2::video::{GLContext, SwapInterval, Window};
 
 use crate::app::App;
 use crate::glsl_expand::ShaderContext;
-use crate::terrain::ErosionGpu;
 use crate::util::RateManager;
 use crate::world::{PaintData, World};
 
@@ -150,6 +149,7 @@ impl TediousDataBundle {
 			camera_pos: app.camera.pos(),
 			zoom: app.camera.zoom(),
 			antialiasing: app.antialiasing,
+			render_mode: app.render_mode as u32,
 		};
 		world.render(paint_data);
 
