@@ -109,28 +109,6 @@ void simulate_droplet(vec2 pos) {
     atomic_add_pixel(current_texel + ivec2(1, 0), soil_amount * (1.0 - cell_offset.x) * cell_offset.y);
     atomic_add_pixel(current_texel + ivec2(1, 1), soil_amount * cell_offset.x * cell_offset.y);*/
 }
-/*
-void erode(ivec2 i_pos) {
-    //int height = imageLoad(map, i_pos).x;
-    //imageStore(map, i_pos, ivec4(height * 3 / 4, 0, 0, 0));
-    // Create droplet at random point
-    vec2 pos = vec2(i_pos);// + vec2(rand_float(i_pos, 0.0), rand_float(i_pos, 1.0)) * 2.0 - 1.0;
-    vec2 dir = vec2(1.0, -1.0);
-    float speed = initialSpeed;
-    float water = initialWaterVolume;
-    float sediment = 0.0;
-
-    for (int lifetime = 0; lifetime < maxDropletLifetime; lifetime++) {
-        if (sediment > sedimentCapacity || deltaHeight > 0.0) {
-        } else {
-
-        }
-
-        // Update droplet's speed and water content
-        speed = sqrt(speed * speed + deltaHeight * gravity);
-    }
-
-}*/
 
 // Value of 1.0 converted to int value
 #define INT_VAL_RANGE 1000000

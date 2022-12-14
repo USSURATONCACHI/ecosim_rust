@@ -122,19 +122,54 @@ vec4 get_world_color(vec2 world_coords) {
     float height = float(i_height) / 1000000.0;
     vec3 color;
 
+    float water_level = 0.43;
+    float beach_level = water_level + 0.03;
+    float mountain_level = 0.9;
+    float snow_level = 0.99;
+
     if (u_render_type == uint(0)) {
         color = vec3(height);
     } else if (u_render_type == uint(1)) {
-        if (height <= 0.4) {
+        if (height <= water_level) {
             color = vec3(height / 3.0, height / 2.0,  0.6);
-        } else if (height <= 0.45) {
+        } else if (height <= beach_level) {
             color = getTerrainColor(Terrain_Beach) + height - 0.4;
-        } else if (height <= 0.9) {
+        } else if (height <= mountain_level) {
             color = getTerrainColor(Terrain_Plains) - (height - 0.45) / 2.0;
-        } else if (height <= 0.99) {
+        } else if (height <= snow_level) {
             color = getTerrainColor(Terrain_Mountains) + height - 0.9;
         } else {
             color = getTerrainColor(Terrain_SnowyMountains) - 0.15 + (height - 0.98);
+        }
+    } else if (u_render_type == uint(2)) {
+        float steepness = length(CalculateHeightAndGradient(ivec2(world_coords)).gradient);
+
+        /*if (height <= 0.4) {
+            color = vec3(height / 3.0, height / 2.0,  0.6);
+        }*/
+        if (height <= water_level) {
+            color = vec3(height / 3.0, height / 2.0,  0.6);
+        } else if (height <= beach_level) {
+            color = getTerrainColor(Terrain_Beach) + height - 0.4;
+        } else {
+            vec3 grass = getTerrainColor(Terrain_Plains);
+            vec3 mud = vec3(51.0, 25.0, 0.0) / vec3(255.0);
+            vec3 mountain = getTerrainColor(Terrain_Mountains);
+
+            float full_mud_steepness = 0.16;
+            steepness = steepness / full_mud_steepness;
+
+            if (steepness <= 1.0) {
+                color = steepness * mud + (1.0 - steepness) * grass;
+            } else {
+                float mountain_steepness = (steepness - 1.0) / 2.0;
+                color = mountain_steepness * mountain + (1.0 - mountain_steepness) * mud;
+            }
+            if (height >= mountain_level) {
+                color = getTerrainColor(Terrain_Mountains) + height - 0.9;
+            } else if (height >= snow_level) {
+                color = getTerrainColor(Terrain_SnowyMountains) + height - 0.98;
+            }
         }
     } else {
         vec2 grad = CalculateHeightAndGradient(world_coords).gradient;

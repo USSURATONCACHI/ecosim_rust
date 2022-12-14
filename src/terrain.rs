@@ -4,7 +4,7 @@ use noise::NoiseFn;
 use crate::glsl_expand::ShaderContext;
 use crate::util::compile_program;
 
-pub fn gen_height(noise: &impl NoiseFn<f64, 2>, size: (u64, u64)) -> Box<[i32]> {
+pub fn to_data(noise: &impl NoiseFn<f64, 2>, size: (u64, u64), func: impl Fn(f32) -> f32) -> Box<[i32]> {
 	let arr_size = size.0 * size.1;
 	let mut map: Box<[i32]> = vec![0; arr_size as usize].into_boxed_slice();
 
@@ -12,7 +12,8 @@ pub fn gen_height(noise: &impl NoiseFn<f64, 2>, size: (u64, u64)) -> Box<[i32]> 
 		for y in 0..size.1 {
 			let id = y * size.0 + x;
 			let val = noise.get([x as f64, y as f64]) as f32;
-			map[id as usize] = ((val / 2.0 + 0.5) * 1_000_000.0) as i32; // range [0; 1kk]
+			let x = (val / 2.0 + 0.5);
+			map[id as usize] = (func(x) * 1_000_000.0) as i32; // range [0; 1kk]
 		}
 	}
 
@@ -32,34 +33,6 @@ pub fn convert_to_texture(gl: &Context, size: (u64, u64), data: &Box<[i32]>) -> 
 						glow::RED_INTEGER, glow::INT, Some(ptr));
 	}
 	texture
-}
-
-
-pub fn _gen_map(_seed: u64) {
-	/*
-	Gen amplitude map (voronoi + quadrants + noise)
-		Should be pretty flat (~= 1.0) with few peaks (< or > 1.0) for mountains and depressions
-
-	Gen base height map (noise * amplitude for each point)
-	Erode height map
-
-	// Gen temperature and humidity maps
-	Set sea level, shallow waters level.
-	Erode rivers from random peaks
-
-	Determine base biomes:
-		very steep + peak => peak
-		very steep + flat => mountain
-		height fluctuates => hills
-		flat			  => plains
-		<= shallow level  => shallow
-		<= sea level	  => sea
-
-	Plains near sea => beach
-
-	// High temp + high humidity =>
-
-	*/
 }
 
 // Erosion code is inspired from here: https://github.com/SebLague/Hydraulic-Erosion/blob/master/Assets/Scripts/Erosion.cs
