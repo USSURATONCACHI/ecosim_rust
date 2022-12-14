@@ -136,10 +136,8 @@ vec4 get_world_color(vec2 world_coords) {
             color = getTerrainColor(Terrain_Beach) + height - 0.4;
         } else if (height <= mountain_level) {
             color = getTerrainColor(Terrain_Plains) - (height - 0.45) / 2.0;
-        } else if (height <= snow_level) {
-            color = getTerrainColor(Terrain_Mountains) + height - 0.9;
         } else {
-            color = getTerrainColor(Terrain_SnowyMountains) - 0.15 + (height - 0.98);
+            color = getTerrainColor(Terrain_Mountains) - (height - mountain_level)/3.0;
         }
     } else if (u_render_type == uint(2)) {
         float steepness = length(CalculateHeightAndGradient(ivec2(world_coords)).gradient);
@@ -167,8 +165,6 @@ vec4 get_world_color(vec2 world_coords) {
             }
             if (height >= mountain_level) {
                 color = getTerrainColor(Terrain_Mountains) + height - 0.9;
-            } else if (height >= snow_level) {
-                color = getTerrainColor(Terrain_SnowyMountains) + height - 0.98;
             }
         }
     } else {

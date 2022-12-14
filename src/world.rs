@@ -4,7 +4,8 @@ use noise::{Fbm, MultiFractal, Perlin};
 use rand::Rng;
 use crate::app::AntiAliasing;
 use crate::glsl_expand::ShaderContext;
-use crate::terrain::{ErosionGpu, to_data};
+use crate::terrain;
+use crate::terrain::{ErosionGpu, ShapeSmoother};
 use crate::util::{compile_program, TickCounter};
 
 const RENDER_VERT_SOURCE: &str =
@@ -59,53 +60,11 @@ pub struct World {
 	max_work_group_count: (usize, usize),
 }
 
-fn create_landscape(gl: &Context, size: (u64, u64)) -> NativeTexture {
-	//let nanos = UNIX_EPOCH.elapsed().unwrap().as_nanos();
-	/*let height: Fbm<Perlin> = Fbm::new(43).set_frequency(0.002);
+fn create_landscape(gl: &Context, size: (u64, u64), smoother: &ShapeSmoother) -> NativeTexture {
+	let noise: Fbm<Perlin> = Fbm::new(46).set_frequency(0.1);
+	let height: Box<[i32]> = terrain::generate_map(size, 100000, 24, smoother, &noise);
 
-	const n: f32 = 8.0;
-	let _func = |x: f32| {
-		let amp = |x: f32| 4.0 * x * x * (1.0 - x);
-		let diff = |x: f32| (0.5 - x) / 2.0 - 0.05;
-		let intens: f32 = 2.0;
-
-		x + intens * diff(x) * amp(x)
-	};
-	let height = to_data(&height, size, |x|x);*/
-	// let temperature: Fbm<Perlin> = Fbm::new(43).set_frequency(0.01);
-
-	let mut height: Box<[i32]> = vec![300_000; (size.0 * size.1) as usize].into_boxed_slice();
-
-	let mut rng = rand::thread_rng();
-	let mut x = (size.0 / 2) as i32;
-	let mut y = (size.1 / 2) as i32;
-
-	for _ in 0..1000000 {
-		let id = y * (size.0 as i32) + x;
-		height[id as usize] = 700_000;
-
-		let mut dx = rng.gen_range(-1..=1);
-		let mut dy = rng.gen_range(-1..=1);
-
-		if x == 0 {
-			dx = 1;
-		} else if x == (size.0 as i32 - 1) {
-			dx = -1;
-		}
-		if y == 0 {
-			dy = 1;
-		} else if y == (size.0 as i32 - 1) {
-			dy = -1;
-		}
-
-		x = (x + dx).clamp(0, size.0 as i32 - 1);
-		y = (y + dy).clamp(0, size.1 as i32 - 1);
-	}
-
-
-	//let map = crate::terrain::gen_height(&noise, size);
-
-	crate::terrain::convert_to_texture(gl, size, &height)
+	terrain::convert_to_texture(gl, size, &height)
 }
 
 impl World {
@@ -151,7 +110,9 @@ impl World {
 		};
 		let current_buf = create_texture(&initial_state);
 		let next_buf = create_texture(&empty_state);
-		let landscape = create_landscape(gl.as_ref(), size);
+
+		let smoother = ShapeSmoother::new(gl.clone(), glsl_manager);
+		let landscape = create_landscape(gl.as_ref(), size, &smoother);
 
 		let sources = [
 			(glow::COMPUTE_SHADER, game_of_life_shader.as_str())
