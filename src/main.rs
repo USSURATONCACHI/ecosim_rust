@@ -10,9 +10,12 @@ mod terrain;
 mod map;
 
 use std::sync::Arc;
+use app::Page;
+use egui_backend::egui::Key;
 use egui_backend::sdl2::video::GLProfile;
 use egui_backend::{egui, sdl2};
 use egui_backend::{sdl2::event::Event, DpiScaling, ShaderVersion};
+use sdl2::event::WindowEvent;
 use std::time::{Instant};
 // Alias the backend to something less mouthful
 use egui_sdl2_gl as egui_backend;
@@ -49,6 +52,7 @@ pub struct TediousDataBundle {
 	pub egui_state: EguiStateHandler,		// used in loop
 	pub egui_ctx: egui::Context,			// used in loop
 	pub start_time: Instant,				// used in loop
+	pub egui_scale: f32,
 }
 
 fn main() {
@@ -79,7 +83,8 @@ fn main() {
 		painter,
 		egui_state,
 		egui_ctx,
-		start_time
+		start_time,
+		egui_scale: 		1.0,
 	};
 
 	run_loop(data, world, app);
@@ -123,38 +128,67 @@ pub fn set_up_window(title: &str, width: u32, height: u32) -> WindowData {
 }
 
 impl TediousDataBundle {
+	pub fn set_scale(&mut self, scale: f32) {
+		self.egui_ctx.set_pixels_per_point(scale);
+		self.painter.pixels_per_point = scale;
+		self.egui_state.native_pixels_per_point = scale;
+		self.painter.update_screen_rect(self.window.drawable_size());
+		self.egui_state.input.screen_rect = Some(self.painter.screen_rect);
+		self.egui_scale = scale;
+	}
+
 	pub fn render_egui<F>(&mut self, run_ui: F)
 		where F: FnMut(&egui::Context)
 	{
+		let zoom = self.egui_ctx.input().zoom_delta();
+		if zoom != 1.0 {
+			self.set_scale(self.egui_scale * zoom);
+		}
+
 		self.egui_state.input.time = Some(self.start_time.elapsed().as_secs_f64());
 		let inputs = self.egui_state.input.take();
 
 		// Render egui
+		//println!("Old mods: {:?}", self.egui_state.modifiers);
 		let outputs = self.egui_ctx.run(inputs, run_ui);
 		self.egui_state.process_output(&self.window, &outputs.platform_output);
+		//println!("New mods: {:?}", self.egui_state.modifiers);
 
 		let paint_jobs = self.egui_ctx.tessellate(outputs.shapes);
 		self.painter.paint(None, paint_jobs, &outputs.textures_delta);
 	}
 
-	pub fn render_all(&mut self, app: &mut App, world: &World) {
+	pub fn 
+	render_all(&mut self, app: &mut App, world: &World) {
 		let mut rect: Option<Rect> = None;
+		let scale = self.egui_scale;
 		self.render_egui(
-			|ctx| app.update(ctx, world, &mut rect)
+			|ctx| app.update(ctx, world, scale, &mut rect)
 		);
 
-		let rect = rect.unwrap();
+		let mut rect = rect.unwrap();
+		rect.min.x = (rect.min.x - 1.0) * self.egui_scale;
+		rect.min.y = (rect.min.y - 1.0) * self.egui_scale;
+		rect.max.x = (rect.max.x + 2.0) * self.egui_scale;
+		rect.max.y = (rect.max.y + 2.0) * self.egui_scale;
+
 		set_viewport_rect(&self.gl, rect);
 
-		let vp_size = rect.max - rect.min;
-		let paint_data = PaintData {
-			screen_size: (vp_size.x, vp_size.y),
-			camera_pos: app.camera.pos(),
-			zoom: app.camera.zoom(),
-			antialiasing: app.antialiasing,
-			render_mode: app.render_mode as u32,
-		};
-		world.render(paint_data);
+		match app.page() {
+			Page::Worldgen => {},
+			Page::Simulation => {
+				let vp_size = rect.max - rect.min;
+				let paint_data = PaintData {
+					screen_size: (vp_size.x, vp_size.y),
+					camera_pos: app.camera.pos(),
+					zoom: app.camera.zoom(),
+					antialiasing: app.antialiasing,
+					render_mode: app.render_mode as u32,
+				};
+				world.render(paint_data);
+			},
+			Page::Statistics => {},
+		}
 
 		unsafe {
 			self.gl.viewport(0, 0, self.window.size().0 as i32, self.window.size().1 as i32);
@@ -239,7 +273,10 @@ fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
 		for event in data.event_pump.poll_iter() {
 			match event {
 				Event::Quit { .. } => break 'running,
-				_ => data.egui_state.process_input(&data.window, event, &mut data.painter),
+				_ => {
+					//println!("Main - {:?}", event);
+					data.egui_state.process_input(&data.window, event, &mut data.painter)
+				},
 			}
 		}
 	}

@@ -8,19 +8,6 @@ mod biomes;
 mod landscape;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum View {
-    Height = 0,
-    HeightColors,
-    Biomes,
-}
-impl View {
-    pub fn all() -> &'static [View] {
-        &[View::Height, View::HeightColors, View::Biomes]
-    }
-}
-
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HeightBrush {
     AddHeight,
     RemoveHeight,

@@ -158,10 +158,14 @@ impl App {
 	fn texture_handle(&mut self, name: &str) -> &TextureHandle {
 		self.images.get(name).unwrap()
 	}
+
+	pub fn page(&self) -> &Page {
+		&self.page
+	}
 }
 
 impl App {
-	pub fn update(&mut self, ctx: &egui::Context, world: &World, return_rect: &mut Option<Rect>) {
+	pub fn update(&mut self, ctx: &egui::Context, world: &World, scale: f32, return_rect: &mut Option<Rect>) {
 		let (tps, tick, (size_x, size_y)) = {
 			(world.tps().tps_corrected(), world.cur_tick(), world.size())
 		};
@@ -357,14 +361,14 @@ impl App {
 
 		egui::CentralPanel::default().show(ctx, |ui| {
 			egui::Frame::canvas(ui.style()).show(ui, |ui| {
-				self.custom_painting(ctx, ui, return_rect);
+				self.custom_painting(ctx, ui, scale, return_rect);
 			});
 		});
 	}
 }
 
 impl App {
-	fn custom_painting(&mut self, ctx: &egui::Context, ui: &mut Ui, return_rect: &mut Option<Rect>) {
+	fn custom_painting(&mut self, ctx: &egui::Context, ui: &mut Ui, scale: f32, return_rect: &mut Option<Rect>) {
 		let rect = ui.available_rect_before_wrap();
 		let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), rect.height()), egui::Sense::click_and_drag());
 
@@ -374,7 +378,7 @@ impl App {
 			self.camera.on_drag_start();
 		}
 		if response.dragged() {
-			let drag = response.drag_delta();
+			let drag = response.drag_delta() * scale;
 			self.camera.on_drag((-drag.x / zoom_coef * self.cam_vel_sensitivity, drag.y / zoom_coef * self.cam_vel_sensitivity));
 		}
 		if response.drag_released() {
