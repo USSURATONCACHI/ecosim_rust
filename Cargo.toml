@@ -16,6 +16,7 @@ noise = "0.8.2"
 path-dedot = "3.0.17"
 regex = "1.5.5"
 lazy_static = "1.4.0"
+fixed = "1.23.1"
 
 
 [build-dependencies]

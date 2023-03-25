@@ -7,6 +7,7 @@ mod util;
 mod world;
 mod glsl_expand;
 mod terrain;
+mod map;
 
 use std::sync::Arc;
 use egui_backend::sdl2::video::GLProfile;
@@ -65,7 +66,7 @@ fn main() {
 	// Tools:
 	let mut glsl_manager = ShaderContext::new().unwrap();
 
-	let world = World::new(win_data.gl.clone(), (1024, 1024), &mut glsl_manager);
+	let world = World::new(win_data.gl.clone(), (256, 256), &mut glsl_manager);
 	let app = App::new(&egui_ctx, (world.size().0 as f32 / 2.0, world.size().1 as f32 / 2.0));
 
 	let data = TediousDataBundle {
@@ -190,6 +191,7 @@ fn run_loop(mut data: TediousDataBundle, mut world: World, mut app: App) {
 		let max_ticks_to_do = ((time_left.as_secs_f64() * assumed_ups) as u32).max(1);
 
 		let simulation_running = app.run_until > world.cur_tick() || app.run_simulation;
+
 		let ticks_to_do;
 		if app.run_until > world.cur_tick() {
 			ticks_to_do	= (app.run_until - world.cur_tick()).min(max_ticks_to_do as u64);

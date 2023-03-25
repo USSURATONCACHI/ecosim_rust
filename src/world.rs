@@ -62,7 +62,7 @@ pub struct World {
 
 fn create_landscape(gl: &Context, size: (u64, u64), smoother: &ShapeSmoother) -> NativeTexture {
 	let noise: Fbm<Perlin> = Fbm::new(46).set_frequency(0.1);
-	let height: Box<[i32]> = terrain::generate_map(size, 100000, 24, smoother, &noise);
+	let height: Box<[i32]> = terrain::generate_map(size, 100000, 4, smoother, &noise);
 
 	terrain::convert_to_texture(gl, size, &height)
 }
